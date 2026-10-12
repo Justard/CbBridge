@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared core: domain, use cases, codebeamer + framework clients. Used by the web console and the CLI. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CbBridge.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Brings HttpClientFactory, Options, Logging, Configuration — no NuGet packages needed. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

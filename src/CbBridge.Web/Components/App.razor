@@ -1,0 +1,44 @@
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>@Brand.ProductName</title>
+    @if (!string.IsNullOrWhiteSpace(Brand.FaviconUrl))
+    {
+        <link rel="icon" href="@Brand.FaviconUrl" />
+    }
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="CbBridge.Web.styles.css" />
+    @* Branding colours. Values are validated as #RRGGBB, so nothing else can reach the CSS. *@
+    <style>
+        :root {
+            --accent: @Accent;
+            --accent-strong: @BrandingTheme.Shade(Accent);
+            --accent-soft: @BrandingTheme.Tint(Accent);
+            --header: @Header;
+        }
+    </style>
+    <HeadOutlet @rendermode="RenderModeNoPrerender" />
+</head>
+
+<body>
+    <Routes @rendermode="RenderModeNoPrerender" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
+
+@code {
+    // Interactive everywhere, no prerender: the login lives in the circuit, so a prerendered
+    // first paint would always show "not signed in" for a moment.
+    private static readonly IComponentRenderMode RenderModeNoPrerender = new InteractiveServerRenderMode(prerender: false);
+
+    private BrandingOptions Brand => BrandingOptions.Value;
+    private string Accent => BrandingTheme.SafeColor(Brand.AccentColor, BrandingTheme.DefaultAccent);
+    private string Header => BrandingTheme.SafeColor(Brand.HeaderColor, BrandingTheme.DefaultHeader);
+}

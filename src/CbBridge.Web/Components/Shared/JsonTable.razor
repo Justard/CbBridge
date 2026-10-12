@@ -1,0 +1,207 @@
+@* Generic data table for any codebeamer list response. Columns come from the JSON itself,
+   so it works before the real field set is known. *@
+
+<section class="card">
+    <div class="section-head">
+        <h2>@Title <span class="count">@Filtered.Count of @Rows.Count</span></h2>
+        @if (!string.IsNullOrEmpty(Source))
+        {
+            <code class="call">@Source</code>
+        }
+    </div>
+
+    <div class="row-wrap">
+        <input class="grow" type="search" placeholder="Search this table…" @bind="_q" @bind:event="oninput" aria-label="Search @Title" />
+        @if (Selectable && OnAddSelected.HasDelegate)
+        {
+            <button class="btn primary" disabled="@(_selected.Count == 0)" @onclick="AddSelectedAsync">@SelectedLabel (@_selected.Count)</button>
+        }
+    </div>
+
+    @if (_types.Count > 1 || NewestFilter)
+    {
+        <div class="chips" role="group" aria-label="Filters">
+            @if (NewestFilter)
+            {
+                <button class="filter-chip @(_newestOnly ? "on" : "")" aria-pressed="@(_newestOnly ? "true" : "false")"
+                        title="Only the test run with the highest item ID — the most recently created one"
+                        @onclick="ToggleNewest">Newest test run only</button>
+            }
+            <button class="filter-chip @(_type is null ? "on" : "")" @onclick="() => SetType(null)">All <span class="mono">@Rows.Count</span></button>
+            @foreach (var (type, count) in _types)
+            {
+                <button class="filter-chip @(_type == type ? "on" : "")" @onclick="() => SetType(type)">@type <span class="mono">@count</span></button>
+            }
+        </div>
+    }
+
+    @if (Rows.Count == 0)
+    {
+        <p class="empty">The response contained no rows.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        @if (Selectable)
+                        {
+                            <th class="narrow"><input type="checkbox" checked="@AllSelected" @onchange="ToggleAll" aria-label="Select all rows" /></th>
+                        }
+                        @foreach (var c in _columns)
+                        {
+                            <th>@(c == "_level" ? "level" : c)</th>
+                        }
+                        @if (OnAction.HasDelegate)
+                        {
+                            <th></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Filtered)
+                    {
+                        <tr class="@(_selected.Contains(row) ? "selected" : "")">
+                            @if (Selectable)
+                            {
+                                <td class="narrow"><input type="checkbox" checked="@_selected.Contains(row)" @onchange="() => Toggle(row)" aria-label="Select row" /></td>
+                            }
+                            @foreach (var c in _columns)
+                            {
+                                <td title="@JsonPathLite.Display(row[c], 2000)" style="@Indent(row, c)">@JsonPathLite.Display(row[c])</td>
+                            }
+                            @if (OnAction.HasDelegate)
+                            {
+                                <td class="action"><button class="btn small" @onclick="() => OnAction.InvokeAsync(row)">@ActionLabel</button></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <details class="raw">
+            <summary>Raw JSON of the first row@(_hiddenColumns > 0 ? $" · {_hiddenColumns} more column(s) not shown" : "")</summary>
+            <pre>@Rows[0].ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre>
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string Source { get; set; } = "";
+    [Parameter, EditorRequired] public List<JsonObject> Rows { get; set; } = new();
+    [Parameter] public string ActionLabel { get; set; } = "Open";
+    [Parameter] public EventCallback<JsonObject> OnAction { get; set; }
+    [Parameter] public bool Selectable { get; set; }
+    [Parameter] public string SelectedLabel { get; set; } = "Use selected";
+    [Parameter] public EventCallback<List<JsonObject>> OnAddSelected { get; set; }
+
+    /// <summary>Shows a "Newest test run only" filter (on by default): keeps the row with the highest item ID.</summary>
+    [Parameter] public bool NewestFilter { get; set; }
+
+    private const int MaxColumns = 10;
+    private static readonly string[] Preferred = { "id", "name", "_level", "type", "status", "uri" };
+
+    private string _q = "";
+    private readonly HashSet<JsonObject> _selected = new();
+    private List<string> _columns = new();
+    private int _hiddenColumns;
+    private List<JsonObject>? _lastRows;
+
+    // Filter chips by the "type" column (e.g. Test Run / Test Case / Requirement in references)
+    private List<(string Type, int Count)> _types = new();
+    private string? _type;
+
+    private static string TypeOf(JsonObject row) => JsonPathLite.Display(row["type"], 80);
+
+    private void SetType(string? type)
+    {
+        _type = type;
+        _selected.RemoveWhere(r => type is not null && TypeOf(r) != type);
+    }
+
+    private bool _newestOnly;
+
+    private void ToggleNewest()
+    {
+        _newestOnly = !_newestOnly;
+        if (_newestOnly) PreferRunType();
+        _selected.Clear();
+    }
+
+    /// <summary>When rows carry a type, "newest" only makes sense among test runs.</summary>
+    private void PreferRunType()
+    {
+        var run = _types.Select(t => t.Type).FirstOrDefault(t => t.Contains("run", StringComparison.OrdinalIgnoreCase));
+        if (run is not null) _type = run;
+    }
+
+    private static long NumericId(JsonObject row) =>
+        long.TryParse(JsonPathLite.IdOf(row), out var id) ? id : long.MinValue;
+
+    private List<JsonObject> Filtered
+    {
+        get
+        {
+            var rows = Rows
+                .Where(r => _type is null || TypeOf(r) == _type)
+                .Where(r => string.IsNullOrWhiteSpace(_q) || r.ToJsonString().Contains(_q, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (_newestOnly && rows.Count > 1)
+                rows = rows.OrderByDescending(NumericId).Take(1).ToList(); // codebeamer IDs grow over time
+            return rows;
+        }
+    }
+
+    private bool AllSelected => Filtered.Count > 0 && Filtered.All(_selected.Contains);
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_lastRows, Rows)) return;
+        _lastRows = Rows;
+        _selected.Clear();
+
+        var keys = new List<string>();
+        foreach (var row in Rows.Take(50))
+            foreach (var kv in row)
+                if (!keys.Contains(kv.Key)) keys.Add(kv.Key);
+
+        var ordered = Preferred.Where(keys.Contains).Concat(keys.Where(k => !Preferred.Contains(k))).ToList();
+        _columns = ordered.Take(MaxColumns).ToList();
+        _hiddenColumns = Math.Max(0, ordered.Count - MaxColumns);
+
+        _types = Rows.Where(r => r["type"] is not null)
+            .GroupBy(TypeOf).Where(g => g.Key.Length > 0)
+            .Select(g => (g.Key, g.Count())).OrderByDescending(t => t.Item2).ToList();
+        _type = null;
+        _newestOnly = NewestFilter;
+        if (_newestOnly) PreferRunType();
+    }
+
+    private void Toggle(JsonObject row)
+    {
+        if (!_selected.Remove(row)) _selected.Add(row);
+    }
+
+    private void ToggleAll()
+    {
+        var all = AllSelected;
+        foreach (var r in Filtered)
+        {
+            if (all) _selected.Remove(r); else _selected.Add(r);
+        }
+    }
+
+    private async Task AddSelectedAsync()
+    {
+        var picked = Rows.Where(_selected.Contains).ToList();
+        _selected.Clear();
+        await OnAddSelected.InvokeAsync(picked);
+    }
+
+    private static string? Indent(JsonObject row, string column) =>
+        column == "name" && row["_level"] is JsonValue v && v.TryGetValue<int>(out var level) && level > 0
+            ? $"padding-left:{10 + 18 * level}px"
+            : null;
+}

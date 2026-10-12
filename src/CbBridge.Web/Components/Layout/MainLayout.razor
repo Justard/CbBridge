@@ -1,0 +1,42 @@
+@inherits LayoutComponentBase
+@inject CodebeamerSession Session
+@inject NavigationManager Nav
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<header class="topbar">
+    <a class="brand" href="@(Session.IsSignedIn ? "/console" : "/")">
+        <BrandMark />
+        <span class="brand-text">
+            <span class="brand-name">@BrandingOptions.Value.ProductName</span>
+            <span class="brand-sub">@(string.IsNullOrWhiteSpace(BrandingOptions.Value.CompanyName) ? BrandingOptions.Value.Tagline : BrandingOptions.Value.CompanyName)</span>
+        </span>
+    </a>
+    <div class="topbar-right">
+        @if (Session.IsSignedIn)
+        {
+            <span class="chip mono">@Session.BaseUrl</span>
+            <span class="chip read">read · legacy REST</span>
+            <span class="chip write">write · Swagger v3</span>
+            <span class="chip mono">@Session.User</span>
+            <button class="btn ghost" @onclick="SignOut">Sign out</button>
+        }
+    </div>
+</header>
+
+<main class="page">
+    @Body
+</main>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private void SignOut()
+    {
+        Session.SignOut();
+        Nav.NavigateTo("/");
+    }
+}

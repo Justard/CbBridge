@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C3DDAB3D-BFA3-4A6D-B7EB-2ABC0B406C24}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CbBridge.Web", "src\CbBridge.Web\CbBridge.Web.csproj", "{FB3DA69E-74AE-47C9-AA45-3293FC7F228D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CbBridge.Core", "src\CbBridge.Core\CbBridge.Core.csproj", "{961E7ED0-1078-401E-B2DE-0975044BBE3D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FB3DA69E-74AE-47C9-AA45-3293FC7F228D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB3DA69E-74AE-47C9-AA45-3293FC7F228D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB3DA69E-74AE-47C9-AA45-3293FC7F228D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB3DA69E-74AE-47C9-AA45-3293FC7F228D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FB3DA69E-74AE-47C9-AA45-3293FC7F228D} = {C3DDAB3D-BFA3-4A6D-B7EB-2ABC0B406C24}
+		{961E7ED0-1078-401E-B2DE-0975044BBE3D} = {C3DDAB3D-BFA3-4A6D-B7EB-2ABC0B406C24}
+	EndGlobalSection
+EndGlobal

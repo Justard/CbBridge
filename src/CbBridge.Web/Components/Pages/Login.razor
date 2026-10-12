@@ -1,0 +1,90 @@
+@page "/"
+@inject CodebeamerSession Session
+@inject ICodebeamerReader Reader
+@inject IOptions<CodebeamerOptions> Options
+@inject NavigationManager Nav
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<PageTitle>@BrandingOptions.Value.ProductName · Sign in</PageTitle>
+
+<section class="card narrow">
+    <div class="login-brand">
+        <BrandMark Height="40" />
+        <div class="who">
+            <strong>@BrandingOptions.Value.ProductName</strong>
+            <span>@(string.IsNullOrWhiteSpace(BrandingOptions.Value.CompanyName) ? BrandingOptions.Value.Tagline : BrandingOptions.Value.CompanyName)</span>
+        </div>
+    </div>
+    <h1>Sign in to codebeamer</h1>
+    <form class="stack" @onsubmit="SignInAsync">
+        <label>Server URL
+            <input class="mono" type="url" @bind="_url" placeholder="https://cb.yourcompany.com/cb" required />
+        </label>
+
+        <div class="seg" role="group" aria-label="Authentication method">
+            <button type="button" class="@(_token ? "" : "on")" @onclick="() => _token = false">Username &amp; password</button>
+            <button type="button" class="@(_token ? "on" : "")" @onclick="() => _token = true">API token</button>
+        </div>
+
+        @if (_token)
+        {
+            <label>Token
+                <input type="password" class="mono" @bind="_secret" autocomplete="off" required />
+            </label>
+        }
+        else
+        {
+            <label>Username
+                <input @bind="_user" autocomplete="username" required />
+            </label>
+            <label>Password
+                <input type="password" @bind="_secret" autocomplete="current-password" required />
+            </label>
+        }
+
+        <button class="btn primary big" type="submit" disabled="@_busy">@(_busy ? "Checking…" : "Sign in")</button>
+
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+        <p class="hint">The login is checked with <code>@Reader.Describe(Options.Value.PingPath)</code>. Credentials stay on the bridge server, in memory, for this browser tab only.</p>
+    </form>
+</section>
+
+@code {
+    private string _url = "";
+    private string _user = "";
+    private string _secret = "";
+    private bool _token;
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _url = string.IsNullOrEmpty(Session.BaseUrl) ? Options.Value.DefaultBaseUrl : Session.BaseUrl;
+        _user = Session.User;
+    }
+
+    private async Task SignInAsync()
+    {
+        _busy = true;
+        _error = null;
+        Session.Configure(_url, _user, _secret, _token);
+        try
+        {
+            await Reader.PingAsync();
+            Session.MarkSignedIn();
+            Nav.NavigateTo("/console");
+        }
+        catch (Exception ex)
+        {
+            Session.SignOut();
+            _error = ex is CodebeamerException ? ex.Message : $"Sign-in failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

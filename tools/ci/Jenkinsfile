@@ -1,0 +1,67 @@
+// CB Test Bridge — run codebeamer tests from Jenkins.
+//
+// Jenkins credentials to create once (Manage Jenkins → Credentials):
+//   codebeamer-ci-agent      "Username with password"  → the CI agent's codebeamer account
+//   cb-test-bridge-api-key   "Secret text"             → the bridge's Ci:ApiKey
+// Agent needs Python 3.8+ (no extra packages). Works on Linux and Windows agents.
+
+pipeline {
+    agent any
+
+    parameters {
+        choice(name: 'SCOPE', choices: ['category', 'testablauf', 'test-case', 'test-run'],
+               description: 'What to run: a category of Testabläufe, one Testablauf, a single test case, or an existing test run')
+        string(name: 'ID', defaultValue: '', description: 'codebeamer ID or link of the category / Testablauf / test case / test run')
+        string(name: 'ONLY_TEST_CASES', defaultValue: '', description: 'Optional: comma-separated test case IDs to keep (category / Testablauf only)')
+        string(name: 'RELEASE', defaultValue: '', description: 'Release for this execution, e.g. R5.0')
+        string(name: 'VERSIONS', defaultValue: '', description: 'Comma-separated versions, e.g. FW 5.0.1,HW D1')
+        string(name: 'FRAMEWORK_URL', defaultValue: '', description: 'Test system, e.g. http://bench-a:5001 (empty = bridge default)')
+        booleanParam(name: 'CREATE_NEW_RUNS', defaultValue: true, description: 'Create a new codebeamer test run per test case')
+        booleanParam(name: 'POST_BACK', defaultValue: true, description: 'Write results to codebeamer')
+    }
+
+    environment {
+        BRIDGE_URL = 'https://cb-test-bridge.example.com'   // ← your bridge
+    }
+
+    options {
+        timeout(time: 4, unit: 'HOURS')
+        disableConcurrentBuilds(abortPrevious: false)
+    }
+
+    stages {
+        stage('Run tests via CB Test Bridge') {
+            steps {
+                script {
+                    if (!params.ID?.trim()) { error 'Set ID (category / Testablauf / test case / test run).' }
+
+                    def args = ["--${params.SCOPE}", params.ID.trim(), '--junit', 'junit.xml']
+                    if (params.ONLY_TEST_CASES?.trim()) { args += ['--only', params.ONLY_TEST_CASES.trim()] }
+                    if (params.RELEASE?.trim())         { args += ['--release', params.RELEASE.trim()] }
+                    if (params.VERSIONS?.trim())        { args += ['--versions', params.VERSIONS.trim()] }
+                    if (params.FRAMEWORK_URL?.trim())   { args += ['--framework-url', params.FRAMEWORK_URL.trim()] }
+                    if (!params.CREATE_NEW_RUNS)        { args += ['--no-new-runs'] }
+                    if (!params.POST_BACK)              { args += ['--no-post-back'] }
+                    def quoted = args.collect { "\"${it}\"" }.join(' ')
+
+                    withCredentials([
+                        usernamePassword(credentialsId: 'codebeamer-ci-agent', usernameVariable: 'CB_USER', passwordVariable: 'CB_PASSWORD'),
+                        string(credentialsId: 'cb-test-bridge-api-key', variable: 'BRIDGE_API_KEY')
+                    ]) {
+                        def code = isUnix()
+                            ? sh(returnStatus: true, script: "python3 tools/ci/bridge_ci.py ${quoted}")
+                            : bat(returnStatus: true, script: "python tools\\ci\\bridge_ci.py ${quoted}")
+                        // 0 = all passed · 1 = test failures (build UNSTABLE via the junit step) · 2 = could not run
+                        if (code == 2) { error 'The bridge could not run the tests — see the log above.' }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: 'junit.xml'
+        }
+    }
+}

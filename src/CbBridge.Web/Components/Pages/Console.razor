@@ -1,0 +1,821 @@
+@page "/console"
+@using System.Diagnostics
+@using System.Text
+@implements IDisposable
+@inject CodebeamerSession Session
+@inject ICodebeamerReader Reader
+@inject PayloadBuilder Builder
+@inject RunOrchestrator Orchestrator
+@inject IOptions<CodebeamerOptions> CbOptions
+@inject IOptions<FrameworkOptions> FwOptions
+@inject IOptions<PostBackOptions> PbOptions
+@inject IOptions<BrandingOptions> BrandingOptions
+@inject IOptions<RunMultipleOptions> RmOptions
+@inject CbBridge.Core.Application.Selection.TestSelection Selection
+@inject IFrameworkClient Framework
+@inject CbBridge.Core.Infrastructure.Framework.FrameworkTarget Target
+@inject CbBridge.Web.Infrastructure.Browser.BrowserStore Store
+
+<PageTitle>@BrandingOptions.Value.ProductName · Console</PageTitle>
+
+@if (!Session.IsSignedIn)
+{
+    <section class="card narrow">
+        <h1>Not signed in</h1>
+        <p>Sign in to codebeamer first. (Reloading the page also signs you out — the login lives only in this tab.)</p>
+        <a class="btn primary" href="/">Go to sign in</a>
+    </section>
+}
+else
+{
+    @* ───────────── 1. Link & extract ───────────── *@
+    <section class="card">
+        <div class="section-head">
+            <h1>Source link</h1>
+            <span class="hint">Reads with legacy REST <code>@CbOptions.Value.LegacyPrefix</code></span>
+        </div>
+        <form class="row-wrap" @onsubmit="ResolveAsync">
+            <label class="grow">codebeamer link or item ID
+                <input class="mono" @bind="_link" @bind:event="oninput" placeholder="https://cb.yourcompany.com/cb/item/88130" />
+            </label>
+            <button class="btn primary big" type="submit" disabled="@_busy">@(_busy ? "Loading…" : "Resolve & extract")</button>
+        </form>
+        <p class="hint">@Parsed.Explanation</p>
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+        @if (_calls.Count > 0)
+        {
+            <ul class="calls">
+                @foreach (var c in _calls)
+                {
+                    <li class="mono">@c</li>
+                }
+            </ul>
+        }
+    </section>
+
+    @* ───────────── 2. Extracted tables ───────────── *@
+    @foreach (var t in _tables)
+    {
+        <JsonTable @key="t" Title="@t.Title" Source="@t.Source" Rows="t.Rows"
+                   ActionLabel="@t.ActionLabel" OnAction="t.Action"
+                   Selectable="t.Selectable" OnAddSelected="t.AddSelected" SelectedLabel="Use selected as test runs"
+                   NewestFilter="t.NewestFilter" />
+    }
+
+    @* ───────────── Run multiple (Testabläufe → test cases) ───────────── *@
+    <RunMultiple OnAdd="AddRunMultipleAsync" Disabled="_running" DefaultTimeLimitSec="_opts.DefaultTimeLimitSec" />
+
+    @* ───────────── My tests (written in the bridge) ───────────── *@
+    <section class="card">
+        <div class="section-head">
+            <h2>My tests <span class="count">@_myTests.Count saved in this browser</span></h2>
+            <div class="row-wrap">
+                <label class="btn small file-btn">Import test JSON
+                    <InputFile OnChange="ImportAsync" accept=".json,application/json" class="visually-hidden" />
+                </label>
+                <button class="btn primary small" @onclick="NewTest" disabled="@_running">+ New test</button>
+            </div>
+        </div>
+        <p class="hint">Write a test yourself in the same format the framework receives — name, description, steps, parameters, time limit — and run it like any extracted test. My tests are never posted to codebeamer.</p>
+        @if (_myTests.Count > 0)
+        {
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Steps</th><th>Limit</th><th>Saved</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var t in _myTests.OrderBy(t => t.Name))
+                        {
+                            var tp = t.Payload;
+                            <tr>
+                                <td>@t.Name</td>
+                                <td class="mono">@t.Id</td>
+                                <td class="mono">@((tp?.TestRunSteps as JsonArray)?.Count ?? 0)</td>
+                                <td class="mono">@(tp?.TimeLimitSec ?? 0) s</td>
+                                <td class="mono small">@t.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td class="action">
+                                    <button class="btn small" @onclick="() => AddSaved(t)" disabled="@_running">Add to run list</button>
+                                    <button class="btn small danger" @onclick="() => DeleteSavedAsync(t)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @if (_libraryNote is not null)
+        {
+            <p class="hint">@_libraryNote</p>
+        }
+    </section>
+
+    @* ───────────── 3. Edit before sending ───────────── *@
+    <section class="card">
+        <div class="section-head">
+            <h2>Test runs to send <span class="count">@_rows.Count(r => r.Include) of @_rows.Count included</span></h2>
+            <div class="row-wrap">
+                <button class="btn small" @onclick="() => SetAllIncluded(true)" disabled="@(_running || _rows.Count == 0)">Include all</button>
+                <button class="btn small" @onclick="() => SetAllIncluded(false)" disabled="@(_running || _rows.Count == 0)">Include none</button>
+                <button class="btn small" @onclick="() => SetAllExpanded(true)" disabled="@(_rows.Count == 0)">Expand all</button>
+                <button class="btn small" @onclick="() => SetAllExpanded(false)" disabled="@(_rows.Count == 0)">Collapse all</button>
+                <button class="btn small" @onclick="() => _rows.Clear()" disabled="@(_running || _rows.Count == 0)">Clear list</button>
+            </div>
+        </div>
+
+        @if (_rows.Count == 0)
+        {
+            <p class="empty">No test runs yet. Resolve an item link, or select rows in an outline and press “Use selected as test runs”.</p>
+        }
+
+        @foreach (var row in _rows)
+        {
+            <article @key="row" class="tr-card @(row.Include ? "" : "excluded") @(row.IsEdited ? "edited" : "") @(row.Expanded ? "" : "folded")">
+                <div class="tr-head">
+                    <button type="button" class="btn icon" aria-expanded="@(row.Expanded ? "true" : "false")"
+                            aria-label="@((row.Expanded ? "Collapse " : "Expand ") + row.Original.ItemId)"
+                            @onclick="() => row.Expanded = !row.Expanded">@(row.Expanded ? "▾" : "▸")</button>
+                    <label class="check"><input type="checkbox" @bind="row.Include" disabled="@_running" /> Include</label>
+                    <span class="mono id">#@row.Original.ItemId</span>
+                    @if (!row.Expanded)
+                    {
+                        <strong class="tr-name">@row.Name</strong>
+                    }
+                    @if (row.Original.IsLocal)
+                    {
+                        <span class="badge v-running">My test</span>
+                        <span class="muted">written in the bridge · not posted to codebeamer</span>
+                    }
+                    else
+                    {
+                        <span class="muted">parent @(row.Original.Parent ?? "—") · modifier @(row.Original.Modifier ?? "—")</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(row.Configuration))
+                    {
+                        <span class="badge config" title="Test Configuration">⚙ @row.Configuration</span>
+                    }
+                    @foreach (var (key, text) in row.ExtraSummary)
+                    {
+                        <span class="badge extra" title="@key">@Label(key): @text</span>
+                    }
+                    <span class="spacer"></span>
+                    @if (row.IsEdited)
+                    {
+                        <span class="badge v-timeout">Edited</span>
+                        <button class="btn small" @onclick="row.Reset" disabled="@_running">Undo edits</button>
+                    }
+                    @if (row.Original.IsLocal)
+                    {
+                        <button class="btn small" @onclick="() => SaveToMyTestsAsync(row)" disabled="@(!row.IsValid)">Save to My tests</button>
+                    }
+                    @if (row.IsValid)
+                    {
+                        <a class="btn small" href="@DownloadHref(row)" download="@($"testrun-{row.Original.ItemId}.json")" title="Same JSON the framework receives — replay it with the framework CLI">Input JSON</a>
+                    }
+                    <button class="btn small" @onclick="() => { _rows.Remove(row); }" disabled="@_running">Remove</button>
+                </div>
+                @if (row.Expanded)
+                {
+                <div class="grid2">
+                    <label>Name
+                        <input @bind="row.Name" @bind:event="oninput" disabled="@_running" />
+                    </label>
+                    <label>Time limit for this test run (s)
+                        <input type="number" min="1" @bind="row.TimeLimitSec" disabled="@_running" />
+                    </label>
+                    <label class="span2">Description
+                        <textarea rows="2" @bind="row.Description" @bind:event="oninput" disabled="@_running"></textarea>
+                    </label>
+                    <div class="span2">
+                        @if (row.StepsAsGrid)
+                        {
+                            <StepsEditor Row="row" Columns="CbOptions.Value.EffectiveStepColumns" Disabled="_running" Changed="StateHasChanged" />
+                        }
+                        else
+                        {
+                            <label>Test run steps (JSON — shape not recognised as codebeamer step rows)
+                                <textarea class="mono" rows="6" @bind="row.StepsText" @bind:event="oninput" disabled="@_running"></textarea>
+                                @if (row.StepsError is not null) { <span class="error small">@row.StepsError</span> }
+                            </label>
+                        }
+                    </div>
+                    <label>Parameters (JSON)
+                        <textarea class="mono" rows="5" @bind="row.ParamsText" @bind:event="oninput" disabled="@_running"></textarea>
+                        @if (row.ParamsError is not null) { <span class="error small">@row.ParamsError</span> }
+                    </label>
+                    <label>Releases, versions and other fields (JSON object)
+                        <textarea class="mono" rows="5" @bind="row.ExtraText" @bind:event="oninput" disabled="@_running"
+                                  placeholder='{"releases": [{"name": "R4.3"}], "versions": [{"name": "FW 4.3.1"}]}'></textarea>
+                        @if (row.ExtraError is not null) { <span class="error small">@row.ExtraError</span> }
+                    </label>
+                    <div class="span2 config-row">
+                        <label class="grow">Test Configuration — built from release + version names, editable
+                            <input @bind="row.Configuration" @bind:event="oninput" disabled="@_running" placeholder="R4.3 / FW 4.3.1" />
+                        </label>
+                        <button type="button" class="btn" disabled="@(_running || row.CurrentExtra is null)"
+                                title="Template: @CbOptions.Value.FieldMap.TestConfigurationTemplate"
+                                @onclick="() => row.Configuration = Builder.ComposeConfiguration(row.CurrentExtra) ?? string.Empty">Rebuild from release + version</button>
+                    </div>
+                </div>
+                }
+            </article>
+        }
+    </section>
+
+    @* ───────────── 4. Run & post-back ───────────── *@
+    <section class="card">
+        <div class="section-head">
+            <h2>Test execution</h2>
+        </div>
+
+        <fieldset class="target">
+            <legend>Test system — where the Python framework listens</legend>
+            <div class="row-wrap">
+                <label class="grow">Framework address (host and port)
+                    <input class="mono" value="@_fwUrl" @onchange="OnFwUrlChangedAsync" disabled="@_running" placeholder="http://localhost:5001" />
+                </label>
+                <button class="btn" @onclick="CheckFrameworkAsync" disabled="@(_fwChecking || _running)">@(_fwChecking ? "Checking…" : "Test connection")</button>
+            </div>
+            @if (_fwStatus is not null)
+            {
+                <p class="@(_fwOk ? "ok" : "error")" role="status">@_fwStatus</p>
+            }
+            <div class="row-wrap">
+                <label>Save this address as
+                    <input @bind="_fwName" @bind:event="oninput" placeholder="e.g. Bench A" />
+                </label>
+                <button class="btn" @onclick="SaveTestSystemAsync" disabled="@(_running || string.IsNullOrWhiteSpace(_fwName))">Save</button>
+            </div>
+            @if (_systems.Count > 0)
+            {
+                <div class="chips" role="list" aria-label="Saved test systems">
+                    @foreach (var sys in _systems)
+                    {
+                        var active = string.Equals(sys.Url, Target.BaseUrl, StringComparison.OrdinalIgnoreCase);
+                        <span class="chip-item @(active ? "active" : "")" role="listitem">
+                            <button class="chip-use" @onclick="() => UseTestSystemAsync(sys)" disabled="@_running" title="@sys.Url">
+                                @sys.Name <span class="mono">@sys.Url</span>
+                            </button>
+                            <button class="chip-x" @onclick="() => DeleteTestSystemAsync(sys)" aria-label="Remove @sys.Name">✕</button>
+                        </span>
+                    }
+                </div>
+            }
+            <code class="small">POST @(Target.BaseUrl)@(FwOptions.Value.ExecutePath) · cancel: POST @(Target.BaseUrl)@(FwOptions.Value.CancelPath)</code>
+        </fieldset>
+
+        <div class="run-grid">
+            <div class="stack">
+                <label>Default limit per test run (s) — used for newly added rows
+                    <input type="number" min="1" @bind="_opts.DefaultTimeLimitSec" disabled="@_running" />
+                </label>
+                <label>Limit for the whole run (s)
+                    <input type="number" min="1" @bind="_opts.OverallLimitSec" disabled="@_running" />
+                </label>
+
+                <div class="clock">
+                    <span class="label">TIME LEFT IN RUN</span>
+                    <span class="value mono">@Remaining</span>
+                </div>
+
+                <fieldset class="postback">
+                    <legend>Post-back to codebeamer</legend>
+                    <label class="check"><input type="checkbox" @bind="_opts.PostBack" disabled="@_running" />
+                        <span><strong>Post results back</strong><br /><small>Off = results stay in this console only</small></span>
+                    </label>
+                    <label class="check"><input type="checkbox" @bind="_opts.Continuous" disabled="@(_running || !_opts.PostBack)" />
+                        <span><strong>Continuous repost</strong><br /><small>Post each result the moment it finishes; off = upload once after review</small></span>
+                    </label>
+                    <code class="small">PUT @(CbOptions.Value.V3Prefix)/testruns/{id}@(PbOptions.Value.DryRun ? " — DRY RUN: nothing is written" : "")</code>
+                </fieldset>
+
+                @if (_rows.Any(r => r.Original.SourceTestCaseId is not null))
+                {
+                    <fieldset class="postback">
+                        <legend>Run multiple</legend>
+                        <label class="check"><input type="checkbox" @bind="_opts.CreateNewRuns" disabled="@_running" />
+                            <span><strong>Create a new test run for each test case</strong><br /><small>Created in codebeamer just before the test case runs; its result is posted there. Off = test cases run without a codebeamer test run (results stay here).</small></span>
+                        </label>
+                        <code class="small">POST @(CbOptions.Value.V3Prefix)@(RmOptions.Value.CreatePath.Replace("{trackerId}", string.IsNullOrWhiteSpace(RmOptions.Value.TestRunTrackerId) ? "{trackerId}" : RmOptions.Value.TestRunTrackerId))@(PbOptions.Value.DryRun ? " — DRY RUN: nothing is created" : "")</code>
+                        @if (string.IsNullOrWhiteSpace(RmOptions.Value.TestRunTrackerId))
+                        {
+                            <span class="error small">RunMultiple:TestRunTrackerId is not set in appsettings.json — new test runs cannot be created.</span>
+                        }
+                    </fieldset>
+                }
+
+                <div class="row-wrap">
+                    <button class="btn primary big" @onclick="StartAsync" disabled="@(_running || SendableCount == 0)">
+                        @(_running ? "Running…" : $"Start run ({SendableCount})")
+                    </button>
+                    <button class="btn danger big" @onclick="Abort" disabled="@(!_running)">Abort</button>
+                </div>
+                @if (_opts.PostBack && !_opts.Continuous)
+                {
+                    <button class="btn dark big" @onclick="UploadAsync" disabled="@(_running || _uploading || !_board.Any(NeedsUpload))">
+                        @(_uploading ? "Uploading…" : $"Upload results ({_board.Count(NeedsUpload)})")
+                    </button>
+                }
+            </div>
+
+            <div class="stack min0">
+                @if (_board.Count == 0)
+                {
+                    <p class="empty">Nothing run yet.</p>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Item</th><th>Name</th><th>Verdict</th><th>Duration</th><th>Message</th><th>Upload</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in _board)
+                                {
+                                    <tr>
+                                        <td class="mono">#@r.ItemId@if (r.TestCaseId is not null && r.TestCaseId != r.ItemId) {<br /><small class="muted">TC #@r.TestCaseId</small>}</td>
+                                        <td>@r.Name</td>
+                                        <td><span class="badge v-@r.Verdict.ToString().ToLowerInvariant()">@r.Verdict.ToString().ToUpperInvariant()</span></td>
+                                        <td class="mono">@(r.Duration == TimeSpan.Zero ? "—" : $"{r.Duration.TotalSeconds:0.0}s")</td>
+                                        <td class="msg">@r.Message</td>
+                                        <td class="mono small" title="@r.PostMessage">@UploadLabel(r)</td>
+                                        <td class="action">
+                                            @if (r.RawJson is not null)
+                                            {
+                                                <button class="btn small" @onclick="() => _openResult = _openResult == r.ItemId ? null : r.ItemId">JSON</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                    @if (_openResult == r.ItemId && r.RawJson is not null)
+                                    {
+                                        <tr class="raw-row"><td colspan="7"><pre>@Pretty(r.RawJson)</pre></td></tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                <div class="log mono" aria-live="polite">
+                    @foreach (var line in _log.TakeLast(200))
+                    {
+                        <div>@line</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private sealed class TableView
+    {
+        public string Title = "";
+        public string Source = "";
+        public List<JsonObject> Rows = new();
+        public string ActionLabel = "Open";
+        public EventCallback<JsonObject> Action;
+        public bool Selectable;
+        public EventCallback<List<JsonObject>> AddSelected;
+        public bool NewestFilter;
+    }
+
+    private string _link = "";
+    private bool _busy;
+    private string? _error;
+    private readonly List<string> _calls = new();
+    private readonly List<TableView> _tables = new();
+    private readonly List<PayloadRow> _rows = new();
+
+    private readonly RunOptions _opts = new();
+    private bool _running;
+    private bool _uploading;
+    private CancellationTokenSource? _cts;
+    private readonly List<ExecutionResult> _board = new();
+    private readonly List<string> _log = new();
+    private Stopwatch _sw = new();
+    private System.Threading.Timer? _ticker;
+    private string? _openResult;
+    private CbBridge.Core.Application.Results.RunRecord? _record;
+
+    // My tests + test systems (kept in this user's browser)
+    private const string MyTestsKey = "mytests";
+    private const string SystemsKey = "testsystems";
+    private const string LastSystemKey = "testsystem.last";
+    private List<SavedTest> _myTests = new();
+    private List<SavedTestSystem> _systems = new();
+    private string? _libraryNote;
+    private string _fwUrl = "";
+    private string _fwName = "";
+    private string? _fwStatus;
+    private bool _fwOk;
+    private bool _fwChecking;
+
+    private CodebeamerLink Parsed => LinkParser.Parse(_link);
+
+    protected override void OnInitialized() => _fwUrl = Target.BaseUrl;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !Session.IsSignedIn) return;
+        _myTests = await Store.LoadAsync<List<SavedTest>>(MyTestsKey) ?? new();
+        _systems = await Store.LoadAsync<List<SavedTestSystem>>(SystemsKey) ?? new();
+        var last = await Store.LoadAsync<string>(LastSystemKey);
+        if (last is not null && Target.TrySet(last) is null) _fwUrl = Target.BaseUrl;
+        StateHasChanged();
+    }
+
+    // ───────── test system (framework address) ─────────
+
+    private async Task OnFwUrlChangedAsync(ChangeEventArgs e)
+    {
+        _fwUrl = e.Value?.ToString() ?? "";
+        await ApplyFwUrlAsync();
+    }
+
+    private async Task<bool> ApplyFwUrlAsync()
+    {
+        var error = Target.TrySet(_fwUrl);
+        if (error is not null)
+        {
+            _fwOk = false;
+            _fwStatus = error;
+            return false;
+        }
+        _fwUrl = Target.BaseUrl;
+        _fwStatus = null;
+        await Store.SaveAsync(LastSystemKey, Target.BaseUrl);
+        return true;
+    }
+
+    private async Task CheckFrameworkAsync()
+    {
+        if (!await ApplyFwUrlAsync()) return;
+        _fwChecking = true;
+        try { (_fwOk, _fwStatus) = await Framework.CheckAsync(); }
+        finally { _fwChecking = false; }
+    }
+
+    private async Task SaveTestSystemAsync()
+    {
+        if (!await ApplyFwUrlAsync()) return;
+        var name = _fwName.Trim();
+        _systems.RemoveAll(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        _systems.Add(new SavedTestSystem { Name = name, Url = Target.BaseUrl });
+        _systems = _systems.OrderBy(s => s.Name).ToList();
+        _fwName = "";
+        await Store.SaveAsync(SystemsKey, _systems);
+    }
+
+    private async Task UseTestSystemAsync(SavedTestSystem sys)
+    {
+        _fwUrl = sys.Url;
+        await CheckFrameworkAsync();
+    }
+
+    private async Task DeleteTestSystemAsync(SavedTestSystem sys)
+    {
+        _systems.Remove(sys);
+        await Store.SaveAsync(SystemsKey, _systems);
+    }
+
+    // ───────── my tests ─────────
+
+    private void NewTest()
+    {
+        var payload = new TestRunPayload
+        {
+            IsLocal = true,
+            ItemId = TestRunPayload.NewLocalId(),
+            Name = "New test",
+            TestRunSteps = new JsonArray(new JsonArray("", "", false)),
+            TimeLimitSec = _opts.DefaultTimeLimitSec
+        };
+        _rows.Insert(0, new PayloadRow(payload));
+        _libraryNote = "New test added at the top of “Test runs to send”. Fill it in, then Save to My tests to keep it.";
+    }
+
+    private async Task SaveToMyTestsAsync(PayloadRow row)
+    {
+        if (!row.IsValid) return;
+        var payload = row.ToPayload();
+        _myTests.RemoveAll(t => t.Id == payload.ItemId);
+        _myTests.Add(SavedTest.From(payload));
+        await Store.SaveAsync(MyTestsKey, _myTests);
+
+        // the saved version becomes the new baseline for "Edited / Undo edits"
+        var index = _rows.IndexOf(row);
+        if (index >= 0) _rows[index] = new PayloadRow(payload) { Include = row.Include };
+        _libraryNote = $"Saved “{payload.Name}”.";
+    }
+
+    private void AddSaved(SavedTest saved)
+    {
+        if (_rows.Any(r => r.Original.ItemId == saved.Id))
+        {
+            _libraryNote = $"“{saved.Name}” is already in the run list.";
+            return;
+        }
+        var stored = saved.Payload;
+        if (stored is null)
+        {
+            _libraryNote = $"“{saved.Name}” could not be read (saved by an older version) — delete it and save again.";
+            return;
+        }
+        var payload = stored.WithTimeLimit(stored.TimeLimitSec > 0 ? stored.TimeLimitSec : _opts.DefaultTimeLimitSec);
+        _rows.Add(new PayloadRow(payload));
+        _libraryNote = $"Added “{saved.Name}” to the run list.";
+    }
+
+    private async Task DeleteSavedAsync(SavedTest saved)
+    {
+        _myTests.Remove(saved);
+        await Store.SaveAsync(MyTestsKey, _myTests);
+        _libraryNote = $"Deleted “{saved.Name}” from My tests.";
+    }
+
+    /// <summary>Loads a test JSON — e.g. one downloaded with "Input JSON" — as a new local test.</summary>
+    private async Task ImportAsync(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            await using var stream = e.File.OpenReadStream(maxAllowedSize: 1_000_000);
+            using var reader = new StreamReader(stream);
+            var payload = TestRunPayload.FromJson(await reader.ReadToEndAsync());
+            payload.IsLocal = true;
+            if (!payload.ItemId.StartsWith("local-", StringComparison.Ordinal)) payload.ItemId = TestRunPayload.NewLocalId();
+            if (string.IsNullOrWhiteSpace(payload.Name)) payload.Name = Path.GetFileNameWithoutExtension(e.File.Name);
+            if (payload.TimeLimitSec <= 0) payload.TimeLimitSec = _opts.DefaultTimeLimitSec;
+            _rows.Insert(0, new PayloadRow(payload));
+            _libraryNote = $"Imported “{payload.Name}” from {e.File.Name} as a local test.";
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or InvalidOperationException)
+        {
+            _libraryNote = $"Could not import {e.File.Name}: {ex.Message}";
+        }
+    }
+    private int SendableCount => _rows.Count(r => r.Include && r.IsValid);
+
+    private string Remaining
+    {
+        get
+        {
+            var left = TimeSpan.FromSeconds(Math.Max(0, _opts.OverallLimitSec)) - (_running ? _sw.Elapsed : TimeSpan.Zero);
+            if (left < TimeSpan.Zero) left = TimeSpan.Zero;
+            return $"{(int)left.TotalMinutes:00}:{left.Seconds:00}";
+        }
+    }
+
+    // ───────── extraction ─────────
+
+    private async Task ResolveAsync()
+    {
+        var link = Parsed;
+        _error = null;
+        _calls.Clear();
+        _tables.Clear();
+        if (link.Kind == LinkKind.Unknown || link.Id is null)
+        {
+            _error = link.Explanation;
+            return;
+        }
+        await Guarded(link.Kind switch
+        {
+            LinkKind.Project => () => LoadProjectAsync(link.Id),
+            LinkKind.Category => () => LoadOutlineAsync(link.Id),
+            _ => () => LoadItemAsync(link.Id)
+        });
+    }
+
+    private async Task LoadProjectAsync(string id)
+    {
+        var project = await Call($"/project/{id}", () => Reader.GetProjectAsync(id));
+        AddTable(new TableView { Title = $"Project {id}", Source = Reader.Describe($"/project/{id}"), Rows = JsonPathLite.Rows(project) });
+
+        var categories = await Call($"/project/{id}/categories", () => Reader.GetCategoriesAsync(id));
+        AddTable(new TableView
+        {
+            Title = $"Categories of project {id}",
+            Source = Reader.Describe($"/project/{id}/categories"),
+            Rows = JsonPathLite.Rows(categories),
+            ActionLabel = "Open outline",
+            Action = EventCallback.Factory.Create<JsonObject>(this, row => Guarded(() => LoadOutlineAsync(RequireId(row))))
+        });
+    }
+
+    private async Task LoadOutlineAsync(string categoryId)
+    {
+        var outline = await Call($"/category/{categoryId}/outline", () => Reader.GetOutlineAsync(categoryId));
+        AddTable(new TableView
+        {
+            Title = $"Outline of category {categoryId}",
+            Source = Reader.Describe($"/category/{categoryId}/outline"),
+            Rows = JsonPathLite.Rows(outline),
+            ActionLabel = "Use as test run",
+            Action = EventCallback.Factory.Create<JsonObject>(this, row => Guarded(() => AddTestRunsAsync(new List<JsonObject> { row }))),
+            Selectable = true,
+            AddSelected = EventCallback.Factory.Create<List<JsonObject>>(this, rows => Guarded(() => AddTestRunsAsync(rows)))
+        });
+    }
+
+    /// <summary>
+    /// Item link: show the item and its references; the user picks what to run. (A test case link can have
+    /// many test run references — pick them all with select-all, or filter by type first.)
+    /// </summary>
+    private async Task LoadItemAsync(string itemId)
+    {
+        var item = await Call($"/item/{itemId}", () => Reader.GetItemAsync(itemId));
+        AddTable(new TableView
+        {
+            Title = $"Item {itemId}",
+            Source = Reader.Describe($"/item/{itemId}"),
+            Rows = JsonPathLite.Rows(item),
+            ActionLabel = "Use as test run",
+            Action = EventCallback.Factory.Create<JsonObject>(this, _ => Guarded(() => AddTestRunAsync(itemId, expanded: true)))
+        });
+
+        var refs = await Call($"/item/{itemId}/references", () => Reader.GetReferencesAsync(itemId));
+        AddTable(new TableView
+        {
+            Title = $"References of item {itemId}",
+            Source = Reader.Describe($"/item/{itemId}/references"),
+            Rows = JsonPathLite.Rows(refs),
+            ActionLabel = "Use as test run",
+            Action = EventCallback.Factory.Create<JsonObject>(this, row => Guarded(() => AddTestRunsAsync(new List<JsonObject> { row }))),
+            Selectable = true,
+            AddSelected = EventCallback.Factory.Create<List<JsonObject>>(this, rows => Guarded(() => AddTestRunsAsync(rows))),
+            NewestFilter = true
+        });
+    }
+
+    /// <summary>Run multiple: adds test-case rows (skips ones already listed for the same Testablauf), optionally starts.</summary>
+    private async Task AddRunMultipleAsync((List<PayloadRow> Rows, bool Start) args)
+    {
+        var added = 0;
+        foreach (var row in args.Rows)
+        {
+            var o = row.Original;
+            if (_rows.Any(r => r.Original.SourceTestCaseId == o.SourceTestCaseId && r.Original.GroupName == o.GroupName)) continue;
+            _rows.Add(row);
+            added++;
+        }
+        _calls.Add($"Run multiple: {added} test case(s) added" + (added < args.Rows.Count ? $", {args.Rows.Count - added} already in the list" : ""));
+        StateHasChanged();
+        if (args.Start) await StartAsync();
+    }
+
+    private void SetAllIncluded(bool include) => _rows.ForEach(r => r.Include = include);
+    private void SetAllExpanded(bool expanded) => _rows.ForEach(r => r.Expanded = expanded);
+
+    private async Task AddTestRunsAsync(IReadOnlyCollection<JsonObject> rows)
+    {
+        // adding many at once: fold them so the list stays readable (expand any to edit)
+        var expanded = rows.Count <= 3;
+        foreach (var row in rows)
+            await AddTestRunAsync(RequireId(row), expanded);
+        if (rows.Count > 3) _calls.Add($"Added {rows.Count} test runs (folded — use Expand all or ▸ to edit)");
+    }
+
+    private async Task AddTestRunAsync(string itemId, bool expanded = true)
+    {
+        if (_rows.Any(r => r.Original.ItemId == itemId))
+        {
+            _calls.Add($"#{itemId} is already in the list");
+            return;
+        }
+        _calls.Add(Reader.Describe($"/item/{itemId}") + " …");
+        StateHasChanged();
+        var payload = await Selection.TestRunPayloadAsync(itemId, _opts.DefaultTimeLimitSec);
+        _calls[^1] = Reader.Describe($"/item/{itemId}") + " ✓";
+        _rows.Add(new PayloadRow(payload) { Expanded = expanded });
+    }
+
+    private async Task<JsonNode?> Call(string path, Func<Task<JsonNode?>> call)
+    {
+        _calls.Add(Reader.Describe(path) + " …");
+        StateHasChanged();
+        var result = await call();
+        _calls[^1] = Reader.Describe(path) + " ✓";
+        return result;
+    }
+
+    private void AddTable(TableView view)
+    {
+        _tables.RemoveAll(t => t.Title == view.Title);
+        _tables.Add(view);
+    }
+
+    private static string RequireId(JsonObject row) =>
+        JsonPathLite.IdOf(row) ?? throw new CodebeamerException("This row has no id or uri to open.");
+
+    private async Task Guarded(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try { await action(); }
+        catch (Exception ex) { _error = ex is CodebeamerException ? ex.Message : $"Unexpected error: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    // ───────── run & post-back ─────────
+
+    private async Task StartAsync()
+    {
+        if (_running) return;
+        var queue = _rows.Where(r => r.Include && r.IsValid).Select(r => r.ToPayload()).ToList();
+        if (queue.Count == 0) return;
+
+        _board.Clear();
+        _board.AddRange(queue.Select(ExecutionResult.ForPayload));
+        _log.Clear();
+        _openResult = null;
+        _running = true;
+        _cts = new CancellationTokenSource();
+        _sw = Stopwatch.StartNew();
+        _ticker = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+
+        try
+        {
+            _record = new CbBridge.Core.Application.Results.RunRecord
+            {
+                Source = "console",
+                StartedBy = Session.User,
+                Selection = string.Join(", ", queue.Select(p => "#" + p.ItemId)),
+                FrameworkUrl = Target.BaseUrl
+            };
+            await Orchestrator.RunAsync(queue, _board, _opts.Clone(), LogAsync, () => InvokeAsync(StateHasChanged), _cts.Token, _record);
+        }
+        catch (Exception ex)
+        {
+            _log.Add("bridge error: " + ex.Message);
+        }
+        finally
+        {
+            _sw.Stop();
+            _running = false;
+            _ticker?.Dispose();
+            _ticker = null;
+            _cts.Dispose();
+            _cts = null;
+        }
+    }
+
+    private void Abort() => _cts?.Cancel();
+
+    private static bool NeedsUpload(ExecutionResult r) => r.CanPost && r.Posted is PostState.NotPosted or PostState.Failed;
+
+    private async Task UploadAsync()
+    {
+        _uploading = true;
+        try
+        {
+            foreach (var r in _board.Where(NeedsUpload).ToList())
+                await Orchestrator.PostAndRecordAsync(r, _board.IndexOf(r) + 1, LogAsync, _record);
+            await Orchestrator.SaveRunRecordAsync(_record, _board);
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private Task LogAsync(string line)
+    {
+        _log.Add(line);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>"releases" → "Release", "versions" → "Version", anything else as written.</summary>
+    private static string Label(string key) => key.ToLowerInvariant() switch
+    {
+        "releases" or "release" => "Release",
+        "versions" or "version" => "Version",
+        "testablauf" => "Testablauf",
+        "testcaseid" => "Test case",
+        _ => key
+    };
+
+    private static string UploadLabel(ExecutionResult r) => r.Posted switch
+    {
+        PostState.Posted => "↑ posted",
+        PostState.DryRun => "dry run",
+        PostState.Failed => "failed",
+        _ => r.CanPost ? "—" : "n/a"
+    };
+
+    private static string DownloadHref(PayloadRow row) =>
+        "data:application/json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(row.ToJson()));
+
+    private static string Pretty(string json)
+    {
+        try { return JsonNode.Parse(json)?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) ?? json; }
+        catch (System.Text.Json.JsonException) { return json; }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _ticker?.Dispose();
+    }
+}

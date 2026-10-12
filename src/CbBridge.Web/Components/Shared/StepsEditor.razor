@@ -1,0 +1,119 @@
+@* Grid editor for codebeamer steps: each step is a positional array, e.g.
+   ["Switch ignition ON", "CAN traffic starts", true]. Edits are written back in the same shape. *@
+
+<div class="steps">
+    <div class="steps-head">
+        <span class="steps-title">Test run steps <span class="count">@Row.StepCells.Count</span></span>
+        <button type="button" class="btn small" @onclick="Add" disabled="@Disabled">+ Add step</button>
+    </div>
+
+    @if (Row.StepCells.Count == 0)
+    {
+        <p class="empty">No steps. Add one, or leave empty if the framework does not need steps.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="steps-table">
+                <thead>
+                    <tr>
+                        <th class="narrow">#</th>
+                        @for (var c = 0; c < ColumnCount; c++)
+                        {
+                            <th class="@(IsBoolColumn(c) ? "narrow" : "")">@Title(c)</th>
+                        }
+                        <th class="narrow"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var r = 0; r < Row.StepCells.Count; r++)
+                    {
+                        var ri = r;
+                        <tr>
+                            <td class="mono">@(ri + 1)</td>
+                            @for (var c = 0; c < ColumnCount; c++)
+                            {
+                                var ci = c;
+                                <td class="@(IsBoolColumn(ci) ? "narrow center" : "")">
+                                    @if (IsBoolColumn(ci) || IsBoolCell(ri, ci))
+                                    {
+                                        <input type="checkbox" checked="@GetBool(ri, ci)" disabled="@Disabled"
+                                               aria-label="@($"{Title(ci)} step {ri + 1}")"
+                                               @onchange="e => SetBool(ri, ci, e)" />
+                                    }
+                                    else
+                                    {
+                                        <textarea rows="2" value="@GetText(ri, ci)" disabled="@Disabled"
+                                                  aria-label="@($"{Title(ci)} step {ri + 1}")"
+                                                  @oninput="e => SetText(ri, ci, e)"></textarea>
+                                    }
+                                </td>
+                            }
+                            <td class="row-actions">
+                                <button type="button" class="btn icon" aria-label="Move step @(ri + 1) up" disabled="@(Disabled || ri == 0)" @onclick="() => Move(ri, -1)">↑</button>
+                                <button type="button" class="btn icon" aria-label="Move step @(ri + 1) down" disabled="@(Disabled || ri == Row.StepCells.Count - 1)" @onclick="() => Move(ri, 1)">↓</button>
+                                <button type="button" class="btn icon danger" aria-label="Delete step @(ri + 1)" disabled="@Disabled" @onclick="() => Remove(ri)">✕</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PayloadRow Row { get; set; } = default!;
+    [Parameter, EditorRequired] public string[] Columns { get; set; } = Array.Empty<string>();
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private int ColumnCount => Math.Max(Columns.Length, Row.StepCells.Select(s => s.Count).DefaultIfEmpty(0).Max());
+
+    private string Title(int c) => c < Columns.Length ? Columns[c] : $"Column {c + 1}";
+
+    private bool IsBoolColumn(int c) => c < Columns.Length && Columns[c].TrimEnd().EndsWith('?');
+
+    private bool IsBoolCell(int r, int c) => Cell(r, c) is JsonValue v && v.GetValueKind() is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False;
+
+    private JsonNode? Cell(int r, int c) => c < Row.StepCells[r].Count ? Row.StepCells[r][c] : null;
+
+    private bool GetBool(int r, int c) => Cell(r, c) is JsonValue v && v.TryGetValue<bool>(out var b) && b;
+
+    private string GetText(int r, int c) => Cell(r, c) switch
+    {
+        null => "",
+        JsonValue v when v.TryGetValue<string>(out var s) => s,
+        var other => other.ToJsonString()
+    };
+
+    private Task Set(int r, int c, JsonNode? value)
+    {
+        Row.SetCell(r, c, value);
+        return Changed.InvokeAsync();
+    }
+
+    private Task SetText(int r, int c, ChangeEventArgs e) =>
+        Set(r, c, JsonValue.Create(e.Value?.ToString() ?? string.Empty));
+
+    private Task SetBool(int r, int c, ChangeEventArgs e) =>
+        Set(r, c, JsonValue.Create(e.Value is bool b && b));
+
+    private Task Add()
+    {
+        Row.AddStep(ColumnCount, IsBoolColumn);
+        return Changed.InvokeAsync();
+    }
+
+    private Task Remove(int r)
+    {
+        Row.RemoveStep(r);
+        return Changed.InvokeAsync();
+    }
+
+    private Task Move(int r, int delta)
+    {
+        Row.MoveStep(r, delta);
+        return Changed.InvokeAsync();
+    }
+}

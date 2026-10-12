@@ -1,0 +1,62 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Bridge (C#)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build bridge",
+      "program": "${workspaceFolder}/src/CbBridge.Web/bin/Debug/net8.0/CbBridge.Web.dll",
+      "cwd": "${workspaceFolder}/src/CbBridge.Web",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5150"
+      },
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(http://\\S+)"
+      },
+      "console": "internalConsole"
+    },
+    {
+      "name": "Framework stub (Python)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/framework_stub/app.py",
+      "cwd": "${workspaceFolder}/framework_stub",
+      "console": "integratedTerminal",
+      "subProcess": true
+    },
+    {
+      "name": "Fake codebeamer (Python)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/mock_codebeamer/app.py",
+      "cwd": "${workspaceFolder}/mock_codebeamer",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Framework CLI: replay one test run JSON",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/framework_stub/cli.py",
+      "cwd": "${workspaceFolder}/framework_stub",
+      "args": ["--input", "${input:testrunJson}", "--in-process"],
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Everything: bridge + framework stub + fake codebeamer",
+      "configurations": ["Fake codebeamer (Python)", "Framework stub (Python)", "Bridge (C#)"],
+      "stopAll": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testrunJson",
+      "type": "promptString",
+      "description": "Path to a test run JSON (download it with the 'Input JSON' button in the bridge)"
+    }
+  ]
+}

@@ -1,0 +1,230 @@
+@* Run multiple: a category of Testabläufe (test runs / test sets) → their test cases, grouped.
+   Pick test cases per case, per Testablauf or all; release/version is chosen once here. *@
+@using CbBridge.Core.Application.Selection
+@inject TestSelection Selection
+@inject PayloadBuilder Builder
+
+<section class="card" id="run-multiple">
+    <div class="section-head">
+        <h2>Run multiple <span class="count">Testabläufe → test cases</span></h2>
+        @if (_groups.Count > 0)
+        {
+            <span class="count">@SelectedCount of @TotalCount test cases selected</span>
+        }
+    </div>
+    <p class="hint">Load the category that holds your Testabläufe (test runs or test sets). Each one shows only its test cases. Pick some or all; with “Create a new test run for each test case” on (Test execution), every test case gets its own new codebeamer test run when it runs.</p>
+
+    <form class="row-wrap" @onsubmit="LoadAsync">
+        <label class="grow">Category with Testabläufe (link or ID)
+            <input class="mono" @bind="_input" @bind:event="oninput" placeholder="https://cb.yourcompany.com/cb/category/4480" disabled="@Disabled" />
+        </label>
+        <button type="submit" class="btn primary big" disabled="@(_busy || Disabled || string.IsNullOrWhiteSpace(_input))">@(_busy ? "Loading…" : "Load Testabläufe")</button>
+    </form>
+
+    @if (_status is not null)
+    {
+        <p class="hint" role="status">@_status</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+
+    @if (_groups.Count > 0)
+    {
+        <fieldset>
+            <legend>Release / version for this execution</legend>
+            <div class="row-wrap">
+                <label>Release
+                    <input @bind="_release" @bind:event="oninput" placeholder="R4.3" disabled="@Disabled" />
+                </label>
+                <label class="grow">Version(s), comma-separated
+                    <input @bind="_versions" @bind:event="oninput" placeholder="FW 4.3.1, HW C2" disabled="@Disabled" />
+                </label>
+            </div>
+            <p class="hint">Test Configuration: <strong>@(PreviewConfiguration ?? "— (taken from each test case)")</strong>. Applied to every test case you add now, and to the new test runs.</p>
+        </fieldset>
+
+        <div class="row-wrap">
+            <button type="button" class="btn small" @onclick="() => SelectAll(true)" disabled="@Disabled">Select all</button>
+            <button type="button" class="btn small" @onclick="() => SelectAll(false)" disabled="@Disabled">Select none</button>
+            <button type="button" class="btn small" @onclick="() => ExpandAll(true)">Expand all</button>
+            <button type="button" class="btn small" @onclick="() => ExpandAll(false)">Collapse all</button>
+        </div>
+
+        <div class="groups">
+            @foreach (var g in _groups)
+            {
+                <div class="group" @key="g">
+                    <div class="group-head">
+                        <button type="button" class="btn icon" aria-expanded="@(g.Expanded ? "true" : "false")"
+                                aria-label="@((g.Expanded ? "Collapse " : "Expand ") + g.Name)" @onclick="() => g.Expanded = !g.Expanded">@(g.Expanded ? "▾" : "▸")</button>
+                        <label class="check">
+                            <input type="checkbox" checked="@(g.Cases.Count > 0 && g.Cases.All(c => c.Selected))" disabled="@(Disabled || g.Cases.Count == 0)"
+                                   @onchange="() => ToggleGroup(g)" aria-label="Select all test cases of @g.Name" />
+                            <strong>@g.Name</strong>
+                        </label>
+                        <span class="mono muted">#@g.Id</span>
+                        @if (!string.IsNullOrEmpty(g.Type))
+                        {
+                            <span class="badge v-queued">@g.Type</span>
+                        }
+                        <span class="spacer"></span>
+                        <span class="count">@g.Cases.Count(c => c.Selected) / @g.Cases.Count test cases</span>
+                    </div>
+                    @if (g.Error is not null)
+                    {
+                        <p class="error small">@g.Error</p>
+                    }
+                    @if (g.Expanded)
+                    {
+                        @if (g.Cases.Count == 0 && g.Error is null)
+                        {
+                            <p class="empty">No test cases linked to this Testablauf.</p>
+                        }
+                        <ul class="case-list">
+                            @foreach (var c in g.Cases)
+                            {
+                                <li @key="c">
+                                    <label class="check">
+                                        <input type="checkbox" checked="@c.Selected" disabled="@Disabled" @onchange="() => c.Selected = !c.Selected" />
+                                        <span>@c.Name</span>
+                                        <span class="mono muted">#@c.Id</span>
+                                    </label>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="row-wrap">
+            <button type="button" class="btn" disabled="@(_busy || Disabled || SelectedCount == 0)" @onclick="() => AddAsync(start: false)">Add selected to run list (@SelectedCount)</button>
+            <button type="button" class="btn primary" disabled="@(_busy || Disabled || SelectedCount == 0)" @onclick="() => AddAsync(start: true)">Add selected and start run</button>
+        </div>
+    }
+</section>
+
+@code {
+    /// <summary>Rows to add to the run list; Start = start the run right after adding.</summary>
+    [Parameter] public EventCallback<(List<PayloadRow> Rows, bool Start)> OnAdd { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public int DefaultTimeLimitSec { get; set; } = 60;
+
+    private sealed class Case
+    {
+        public string Id = "";
+        public string Name = "";
+        public bool Selected = true;
+    }
+
+    private sealed class Group
+    {
+        public TestablaufGroup Source = new();
+        public string Id => Source.Id;
+        public string Name => Source.Name;
+        public string Type => Source.Type;
+        public string? Error => Source.Error;
+        public bool Expanded = true;
+        public List<Case> Cases = new();
+    }
+
+    private string _input = "";
+    private string _release = "";
+    private string _versions = "";
+    private bool _busy;
+    private string? _status;
+    private string? _error;
+    private List<Group> _groups = new();
+    private readonly Dictionary<string, JsonNode> _itemCache = new();
+
+    private int TotalCount => _groups.Sum(g => g.Cases.Count);
+    private int SelectedCount => _groups.Sum(g => g.Cases.Count(c => c.Selected));
+
+    private JsonObject? UiExtra => TestSelection.ReleaseVersion(_release, _versions.Split(','));
+
+    private string? PreviewConfiguration => UiExtra is { } e ? Builder.ComposeConfiguration(e) : null;
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _status = null;
+        var categoryId = LinkParser.Parse(_input).Id;
+        if (categoryId is null)
+        {
+            _error = "Enter a category link (…/category/{id}) or its ID.";
+            return;
+        }
+
+        _busy = true;
+        _groups = new();
+        try
+        {
+            _status = $"Loading outline of category {categoryId}…";
+            StateHasChanged();
+            var loaded = await Selection.LoadTestablaeufeAsync(categoryId, async message =>
+            {
+                _status = message;
+                await InvokeAsync(StateHasChanged);
+            });
+            _groups = loaded.Select(g => new Group
+            {
+                Source = g,
+                Expanded = loaded.Count <= 6,
+                Cases = g.Cases.Select(c => new Case { Id = c.Id, Name = c.Name }).ToList()
+            }).ToList();
+            _status = $"{_groups.Count} Testabläufe · {TotalCount} test cases (all selected).";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is CodebeamerException ? ex.Message : $"Could not load the category: {ex.Message}";
+            _status = null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void SelectAll(bool selected) => _groups.ForEach(g => g.Cases.ForEach(c => c.Selected = selected));
+    private void ExpandAll(bool expanded) => _groups.ForEach(g => g.Expanded = expanded);
+
+    private void ToggleGroup(Group g)
+    {
+        var all = g.Cases.All(c => c.Selected);
+        g.Cases.ForEach(c => c.Selected = !all);
+    }
+
+    /// <summary>Builds one run-list row per selected test case (same test case in two Testabläufe = two rows).</summary>
+    private async Task AddAsync(bool start)
+    {
+        _busy = true;
+        _error = null;
+        var rows = new List<PayloadRow>();
+        var uiExtra = UiExtra;
+        try
+        {
+            var selected = _groups.SelectMany(g => g.Cases.Where(c => c.Selected).Select(c => (g, c))).ToList();
+            var n = 0;
+            foreach (var (g, c) in selected)
+            {
+                n++;
+                _status = $"Reading test case {n} of {selected.Count}: {c.Name}…";
+                StateHasChanged();
+                var payload = await Selection.TestCasePayloadAsync(c.Id, g.Source, uiExtra, DefaultTimeLimitSec, _itemCache);
+                rows.Add(new PayloadRow(payload) { Expanded = selected.Count <= 3 });
+            }
+            _status = $"Added {rows.Count} test case(s) to the run list.";
+            await OnAdd.InvokeAsync((rows, start));
+        }
+        catch (Exception ex)
+        {
+            _error = ex is CodebeamerException ? ex.Message : $"Could not add test cases: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
