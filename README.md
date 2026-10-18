@@ -1,12 +1,12 @@
 # CB Test Bridge
 
-A web console that connects a **test management system** (codebeamer today) to **your own test framework**:
+A web console that connects a **test management system** (ALM) to **your own test framework**:
 
-1. **Extract** test runs from codebeamer by pasting a link — project, category or item — or use **Run multiple**
+1. **Extract** test runs from ALM by pasting a link — project, category or item — or use **Run multiple**
    to pick test cases grouped by their Testabläufe, creating a new test run per test case.
 2. **Review and edit** them: steps, parameters, releases/versions, test configuration, time limit.
 3. **Run** them one by one on the test system you choose, with hard time limits that really stop a test.
-4. **Post results back** to codebeamer — live, once after review, or not at all.
+4. **Post results back** to ALM — live, once after review, or not at all.
 5. **Automate it** from Jenkins or any CI through a small API ([CI / Jenkins](docs/ci-jenkins.md)).
 
 The product name, logo and colours are configurable, so any company can run it under its own brand
@@ -35,7 +35,7 @@ python framework_stub/app.py --port 5001      # framework stand-in → http://lo
 dotnet run --project src/CbBridge.Web         # the bridge         → URL printed in the console
 ```
 
-Or in VS Code: *Run and Debug* → **Everything: bridge + framework stub + fake codebeamer** → F5.
+Or in VS Code: *Run and Debug* → **Everything: bridge + framework stub + fake ALM** → F5.
 Sign in with any username/password and paste `10231` (a test case with 14 generated test runs).
 Details: [Installation & configuration](docs/installation-and-configuration.md).
 
@@ -62,6 +62,6 @@ CbBridge/
 
 ## Status
 
-Working model. Verified end to end against the bundled stand-ins; **not yet verified against a real codebeamer
+Working model. Verified end to end against the bundled stand-ins; **not yet verified against a real ALM
 instance** — field names and the result upload format must be checked there first
 (see [Installation & configuration → Connecting a real codebeamer](docs/installation-and-configuration.md#connecting-a-real-codebeamer)).
