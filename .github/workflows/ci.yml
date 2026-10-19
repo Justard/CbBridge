@@ -1,0 +1,89 @@
+# Build, unit tests (Linux + Windows), and an end-to-end run against the local stand-ins.
+# No NuGet packages are used, so restore needs nothing from the internet beyond the .NET SDK itself.
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Build + unit tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]   # windows proves the winsqlite3 path of the run history
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build
+        run: dotnet build CbBridge.sln -c Release
+      - name: Unit tests
+        run: dotnet run -c Release --no-build --project tests/CbBridge.Tests
+
+  e2e:
+    name: End-to-end against stand-ins
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python tools
+        run: pip install flask mcp openapi-spec-validator
+
+      - name: OpenAPI file is up to date and valid
+        run: |
+          python tools/openapi/build_openapi.py
+          git diff --exit-code src/CbBridge.Web/wwwroot/api/openapi.json
+          python -c "import json; from openapi_spec_validator import validate; validate(json.load(open('src/CbBridge.Web/wwwroot/api/openapi.json')))"
+
+      - name: Build
+        run: dotnet build src/CbBridge.Web -c Release
+
+      - name: Start stand-ins and bridge
+        run: |
+          mkdir -p logs
+          (cd mock_codebeamer && nohup python app.py > ../logs/codebeamer.log 2>&1 &)
+          (cd framework_stub && nohup python app.py > ../logs/framework.log 2>&1 &)
+          nohup python tools/agent_stub/agent_stub.py > logs/agent.log 2>&1 &
+          nohup python tools/event_sink/event_sink.py > logs/events.log 2>&1 &
+          cd src/CbBridge.Web
+          ASPNETCORE_ENVIRONMENT=Development \
+          Analysis__Enabled=true Analysis__WebhookUrl=http://localhost:5003/analyze \
+          nohup dotnet run -c Release --no-build --urls http://localhost:5000 > ../../logs/bridge.log 2>&1 &
+
+      - name: Smoke test
+        run: python tools/ci/smoke_test.py
+
+      - name: Logs
+        if: always()
+        run: tail -n 80 logs/*.log
+
+  docker:
+    name: Container image
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t cbbridge:ci .
+      - name: Start and check
+        run: |
+          docker run -d --name cbbridge -p 8080:8080 cbbridge:ci
+          for i in $(seq 1 30); do curl -fs http://localhost:8080/health && break; sleep 1; done
+          curl -fs http://localhost:8080/health
+          docker logs cbbridge 2>&1 | tee bridge.log
+          grep -q "Run history: SQLite" bridge.log   # the system SQLite was found inside the container

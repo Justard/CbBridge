@@ -1,0 +1,93 @@
+@page "/benches"
+@using CbBridge.Core.Application.Execution
+@implements IDisposable
+@inject CodebeamerSession Session
+@inject BenchRegistry Registry
+@inject IHttpClientFactory Http
+@inject IOptions<FrameworkOptions> FwOptions
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<PageTitle>@BrandingOptions.Value.ProductName · Test systems</PageTitle>
+
+@if (!Session.IsSignedIn)
+{
+    <SignInNotice />
+}
+else
+{
+    <section class="card">
+        <div class="section-head">
+            <h1>Test systems</h1>
+            <button class="btn" @onclick="CheckAllAsync" disabled="@_checking">@(_checking ? "Checking…" : "Check all")</button>
+        </div>
+        <p class="hint">Who is running what on which bench — from every browser, CI job and AI agent using this bridge. Known benches come from <code>Framework:Benches</code>.</p>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Test system</th><th>Status</th><th>Running</th><th>Last used</th><th>Health</th></tr></thead>
+                <tbody>
+                    @foreach (var (name, url) in Rows)
+                    {
+                        var busy = Registry.BusyWith(url);
+                        var last = Registry.Recent.FirstOrDefault(u => Same(u.Url, url));
+                        <tr>
+                            <td><strong>@(name ?? "—")</strong><br /><small class="mono muted">@url</small></td>
+                            <td>@if (busy is null) { <span class="badge v-passed">idle</span> } else { <span class="badge v-running">busy</span> }</td>
+                            <td>
+                                @if (busy is not null)
+                                {
+                                    <div>@busy.Who · @busy.Source · since @busy.Since.ToString("HH:mm")</div>
+                                    <small class="muted">@busy.Selection — test @(Math.Min(busy.Done + 1, busy.Total))/@busy.Total@(busy.Current is null ? "" : $": {busy.Current}")</small>
+                                    @if (busy.RunId is not null) { <br /><a class="small" href="/history/@busy.RunId">open run</a> }
+                                }
+                            </td>
+                            <td class="small">@(last is null ? "—" : $"{last.At:dd.MM. HH:mm} · {last.Who} ({last.Source})")</td>
+                            <td class="small">@(_health.TryGetValue(Key(url), out var h) ? h : "")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    private readonly Dictionary<string, string> _health = new(StringComparer.OrdinalIgnoreCase);
+    private bool _checking;
+
+    private IEnumerable<(string? Name, string Url)> Rows =>
+        FwOptions.Value.Benches.Select(b => ((string?)b.Name, b.Url.TrimEnd('/')))
+            .Concat(Registry.Active.Select(a => ((string?)null, a.Url)))
+            .Concat(Registry.Recent.Select(u => ((string?)null, u.Url)))
+            .Concat(new[] { ((string?)"default", FwOptions.Value.BaseUrl.TrimEnd('/')) })
+            .GroupBy(r => Key(r.Item2)).Select(g => (g.Select(x => x.Item1).FirstOrDefault(n => n is not null), g.First().Item2));
+
+    private static string Key(string url) => url.TrimEnd('/').ToLowerInvariant();
+    private static bool Same(string a, string b) => Key(a) == Key(b);
+
+    protected override void OnInitialized() => Registry.Changed += OnChanged;
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Registry.Changed -= OnChanged;
+
+    private async Task CheckAllAsync()
+    {
+        _checking = true;
+        await Task.WhenAll(Rows.Select(async r =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+                using var response = await Http.CreateClient("framework").GetAsync(r.Url + FwOptions.Value.HealthPath, cts.Token);
+                var body = await response.Content.ReadAsStringAsync(cts.Token);
+                var contract = System.Text.RegularExpressions.Regex.Match(body, "\"contract\"\\s*:\\s*\"([^\"]+)\"");
+                _health[Key(r.Url)] = response.IsSuccessStatusCode || (int)response.StatusCode == 404
+                    ? "✓ answers" + (contract.Success ? $" · contract {contract.Groups[1].Value}" : "")
+                    : $"✕ HTTP {(int)response.StatusCode}";
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+            {
+                _health[Key(r.Url)] = "✕ not reachable";
+            }
+        }));
+        _checking = false;
+    }
+}

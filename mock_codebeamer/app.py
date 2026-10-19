@@ -12,12 +12,18 @@ Base URL for the bridge:  http://localhost:5002/cb
     GET /cb/rest/item/<id>/references
     PUT /cb/api/v3/testruns/<id>        (result upload)
     GET /cb/_uploads                    (see what the bridge uploaded)
+    POST /cb/api/v3/items/<id>/comments (AI analysis comment, multipart)
+    GET /cb/_comments                   (see the comments the bridge added)
+    POST /cb/api/v3/items/<id>/attachments (framework files, multipart "attachments")
+    GET /cb/_attachments                (see the files the bridge uploaded)
 Any non-empty username/password or token is accepted.
 """
 from flask import Flask, abort, jsonify, request
 
 app = Flask(__name__)
 UPLOADS = []
+COMMENTS = []
+ATTACHMENTS = []
 CREATED = []          # test runs created through the v3 "create test run" call
 NEXT_RUN_ID = [90001]
 
@@ -192,6 +198,29 @@ def created():
 def upload(tid):
     UPLOADS.append({"testRunId": tid, "body": request.get_json(silent=True)})
     return jsonify(id=tid, updated=True)
+
+
+@app.post("/cb/api/v3/items/<iid>/comments")
+def add_comment(iid):
+    COMMENTS.append({"itemId": iid, "comment": request.form.get("comment"), "commentFormat": request.form.get("commentFormat")})
+    return jsonify(id=len(COMMENTS), itemId=iid), 201
+
+
+@app.post("/cb/api/v3/items/<iid>/attachments")
+def add_attachment(iid):
+    for f in request.files.getlist("attachments"):
+        ATTACHMENTS.append({"itemId": iid, "name": f.filename, "contentType": f.mimetype, "size": len(f.read())})
+    return jsonify(ATTACHMENTS[-1:]), 201
+
+
+@app.get("/cb/_attachments")
+def attachments():
+    return jsonify(ATTACHMENTS)
+
+
+@app.get("/cb/_comments")
+def comments():
+    return jsonify(COMMENTS)
 
 
 @app.get("/cb/_uploads")

@@ -28,12 +28,15 @@ flowchart LR
     INF -- POST /execute --> FW[Test framework]
 ```
 
-Two projects, .NET 8, **no NuGet packages**:
+Two projects plus tests, .NET 8, **no NuGet packages** — nothing to approve in a third-party review, nothing to
+update for security advisories except .NET itself. That's why the run history uses the operating system's SQLite
+through a small P/Invoke wrapper, the tests use their own small runner, and OpenAPI and MCP are written by hand.
 
 | Project | Contains |
 |---|---|
 | `src/CbBridge.Core` (class library) | Domain, Application (selection, editing, run loop, CI jobs, options, branding) and Infrastructure (codebeamer and framework clients). No UI. Reusable by other hosts, e.g. a CLI. |
-| `src/CbBridge.Web` (ASP.NET Core) | Blazor Server UI, the `/api/ci` endpoints, browser storage. |
+| `src/CbBridge.Web` (ASP.NET Core) | Blazor Server UI, the `/api/ci`, `/api/v1` and `/mcp` endpoints, browser storage. |
+| `tests/CbBridge.Tests` (console) | Unit tests, including the run history against the real system SQLite. |
 
 The UI is Blazor Server: pages run on the server and the browser holds a live connection, so credentials and all
 external calls stay server-side. The CI API uses the same Core services in its own scope per job.
@@ -88,6 +91,25 @@ sequenceDiagram
     end
 ```
 
+## Around the run loop
+
+Since the first version, the run loop (`RunOrchestrator`) reports to a few collaborators. None of them can stop a run:
+each catches its own errors.
+
+| Component | Where | Job |
+|---|---|---|
+| `RunRecorder` | Application/Results | Writes each result twice: result files (`ResultStore`) and the run history (`IResultRepository`); keeps the audit log |
+| `SqliteResultRepository` | Infrastructure/Storage | Run history in SQLite through the OS's own library (`SqliteNative` P/Invoke, `SqliteDb`), schema migrations |
+| `FailureAnalyzer` | Application/Analysis | AI analysis in the background; `AnalysisCallbacks` waits for asynchronous answers |
+| `RunEvents` → `IEventPublisher` | Application/Events → Infrastructure/Events | Events to webhooks, from a background queue |
+| `BenchRegistry` | Application/Execution | Which test system is busy with whose run |
+| `BridgeMetrics` | Application | Counters for `/metrics` |
+
+Outside the run loop, three entry points read the same history: the Blazor pages (*History*, *Audit*, *Benches*),
+`/api/v1` (`Web/Api`) and the MCP server (`Web/Mcp`). API and MCP share the JSON shapes (`ApiViews`) and the key
+and scope check (`ApiClientRegistry`, `ApiAuth`). CI jobs, MCP `start_run` and the console all start runs through the
+same `RunOrchestrator`.
+
 ## Key design decisions
 
 | Decision | Why |
@@ -113,7 +135,11 @@ sequenceDiagram
 | Another step column | `Codebeamer:StepColumns` — no code. |
 | Another test management system (e.g. **Xray / Jira**) | Implement `ICodebeamerReader`-style reading and `ICodebeamerResultWriter`-style writing for it, plus a link parser and mapping into `TestRunPayload`. The run loop, editing, time limits and UI stay as they are. (Renaming the ports to system-neutral names is the first step.) |
 | Another framework protocol (CLI, gRPC, …) | Implement `IFrameworkClient`. |
+| Another database (PostgreSQL, SQL Server) for several bridge instances | Implement `IResultRepository`; the pages, API and MCP use only the interface. |
+| A new MCP tool | Add an entry to `McpTools.All` (name, description written for the model, scope, input schema, handler). |
+| A new event | Add it to `EventNames` and `RunEvents`, and to the OpenAPI script. |
 | Authentication to the framework | Add headers in `FlaskFrameworkClient`. |
+| An AI agent on another kind of platform (queue, gRPC, …) | Implement `IAnalysisAgent`. Webhook platforms (n8n, Zapier, Make, own service) need no code — see [AI analysis](ai-analysis.md). The orchestrator runs analyses in the background (`FailureAnalyzer`, `AnalysisCallbacks`), so a slow agent never slows a run. |
 
 ## Limits of the current model
 

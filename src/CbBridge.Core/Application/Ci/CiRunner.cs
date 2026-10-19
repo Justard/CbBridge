@@ -51,7 +51,8 @@ public sealed class CiRunner(
     /// Checks the request and the credentials (one codebeamer read call), then starts the job in the background.
     /// Returns the job, or an error text with an HTTP status.
     /// </summary>
-    public async Task<(CiJob? Job, int Status, string? Error)> StartAsync(CiRunRequest request, CiCredentials credentials, CancellationToken ct)
+    public async Task<(CiJob? Job, int Status, string? Error)> StartAsync(CiRunRequest request, CiCredentials credentials, CancellationToken ct,
+        string? client = null)
     {
         var selector = request.Selector();
         if (selector is null)
@@ -82,10 +83,12 @@ public sealed class CiRunner(
             Target = id,
             FrameworkUrl = frameworkUrl,
             Label = request.Label,
-            RequestedBy = credentials.IsToken ? "(token)" : credentials.User
+            RequestedBy = credentials.IsToken ? "(token)" : credentials.User,
+            Client = client
         };
         store.Add(job);
         job.AddLog($"accepted: {job.Kind} {id} · framework {frameworkUrl} · codebeamer {cbUrl} as {job.RequestedBy}" +
+                   (client is null ? "" : $" · client {client}") +
                    (string.IsNullOrWhiteSpace(job.Label) ? "" : $" · {job.Label}"));
 
         _ = Task.Run(() => ExecuteAsync(job, request, credentials, cbUrl));
@@ -128,22 +131,35 @@ public sealed class CiRunner(
                 OverallLimitSec = request.OverallLimitSec ?? ciOptions.Value.DefaultOverallLimitSec,
                 PostBack = request.PostBack,
                 Continuous = true,               // CI: post each result as soon as it is known
-                CreateNewRuns = request.CreateNewRuns
+                CreateNewRuns = request.CreateNewRuns,
+                Analyze = request.Analyze
             };
             var record = new Results.RunRecord
             {
-                Source = "ci",
+                Source = job.Client is { } c && c.StartsWith("mcp:") ? "mcp" : "ci",
                 StartedBy = job.RequestedBy,
                 Selection = $"{job.Kind} {job.Target}",
                 FrameworkUrl = job.FrameworkUrl,
                 Label = job.Label
             };
-            await sp.GetRequiredService<RunOrchestrator>().RunAsync(
+            job.RunId = record.Id;
+            var orchestrator = sp.GetRequiredService<RunOrchestrator>();
+            if (request.Analyze && !orchestrator.AnalysisAvailable)
+                job.AddLog("analyze requested, but AI analysis is not configured on the bridge (Analysis:Enabled / WebhookUrl) — skipped");
+            await orchestrator.RunAsync(
                 queue, job.Results, options,
                 line => { job.AddLog(line); return Task.CompletedTask; },
                 () => Task.CompletedTask,
                 job.Abort.Token,
                 record);
+
+            if (orchestrator.PendingAnalyses > 0)
+            {
+                var wait = TimeSpan.FromSeconds(Math.Max(0, ciOptions.Value.AnalysisWaitSec));
+                job.AddLog($"waiting up to {wait.TotalSeconds:0}s for {orchestrator.PendingAnalyses} AI analysis/analyses");
+                await orchestrator.WaitForAnalysesAsync(wait, job.Abort.Token);
+                await orchestrator.SaveRunRecordAsync(record, job.Results);
+            }
 
             job.State = job.Abort.IsCancellationRequested ? CiJobState.Aborted : CiJobState.Finished;
             var s = CiSummary.From(job.Results.ToList());

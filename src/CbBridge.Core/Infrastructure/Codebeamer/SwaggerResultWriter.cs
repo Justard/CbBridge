@@ -16,8 +16,78 @@ public sealed class SwaggerResultWriter(
     CodebeamerSession session,
     IOptions<CodebeamerOptions> cbOptions,
     IOptions<PostBackOptions> postOptions,
-    IOptions<RunMultipleOptions> runMultipleOptions) : ICodebeamerResultWriter
+    IOptions<RunMultipleOptions> runMultipleOptions,
+    IOptions<AnalysisOptions> analysisOptions) : ICodebeamerResultWriter
 {
+    /// <summary>
+    /// ALIGN WITH YOUR INSTANCE: codebeamer v3 takes files as multipart/form-data, part name "attachments", on
+    /// POST /api/v3/items/{itemId}/attachments — check your swagger.
+    /// </summary>
+    public async Task<(PostState State, string Message)> UploadAttachmentAsync(string itemId, string fileName, string contentType,
+        byte[] content, CancellationToken ct = default)
+    {
+        var path = $"{cbOptions.Value.V3Prefix}/items/{Uri.EscapeDataString(itemId)}/attachments";
+        if (postOptions.Value.DryRun)
+            return (PostState.DryRun, $"POST {path} {fileName} ({content.Length} bytes, dry run, not sent)");
+
+        var file = new ByteArrayContent(content);
+        file.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.TryParse(contentType, out var ctype)
+            ? ctype : new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        using var request = new HttpRequestMessage(HttpMethod.Post, session.BaseUrl + path)
+        {
+            Content = new MultipartFormDataContent { { file, "attachments", fileName } }
+        };
+        session.Authorize(request);
+        try
+        {
+            using var response = await httpFactory.CreateClient("codebeamer").SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return response.IsSuccessStatusCode
+                ? (PostState.Posted, $"POST {path} {fileName} → {(int)response.StatusCode}")
+                : (PostState.Failed, $"POST {path} {fileName} → HTTP {(int)response.StatusCode}: {Shorten(body)}");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or ObjectDisposedException or InvalidOperationException)
+        {
+            return (PostState.Failed, $"POST {path} {fileName} → {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ALIGN WITH YOUR INSTANCE: codebeamer v3 takes comments as multipart/form-data (fields "comment" and
+    /// "commentFormat") on POST /api/v3/items/{itemId}/comments — check your swagger.
+    /// </summary>
+    public async Task<(PostState State, string Message)> PostCommentAsync(string itemId, string text, CancellationToken ct = default)
+    {
+        var a = analysisOptions.Value;
+        var path = cbOptions.Value.V3Prefix + a.CommentPath.Replace("{itemId}", Uri.EscapeDataString(itemId));
+        var comment = string.IsNullOrWhiteSpace(a.CommentPrefix) ? text : $"{a.CommentPrefix}\n{text}";
+
+        if (postOptions.Value.DryRun)
+            return (PostState.DryRun, $"POST {path} (dry run, not sent) {Shorten(comment)}");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, session.BaseUrl + path)
+        {
+            Content = new MultipartFormDataContent
+            {
+                { new StringContent(comment, Encoding.UTF8), "comment" },
+                { new StringContent("PlainText"), "commentFormat" }
+            }
+        };
+        session.Authorize(request);
+        try
+        {
+            using var response = await httpFactory.CreateClient("codebeamer").SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return response.IsSuccessStatusCode
+                ? (PostState.Posted, $"POST {path} → {(int)response.StatusCode}")
+                : (PostState.Failed, $"POST {path} → HTTP {(int)response.StatusCode}: {Shorten(body)}");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or ObjectDisposedException or InvalidOperationException)
+        {
+            return (PostState.Failed, $"POST {path} → {ex.Message}");
+        }
+    }
+
     public async Task<(PostState State, string Message)> PostResultAsync(ExecutionResult result, CancellationToken ct = default)
     {
         if (result.PostTargetId is null)

@@ -17,7 +17,10 @@ public static class CiEndpoints
 {
     public static void MapCiApi(this WebApplication app)
     {
-        var api = app.MapGroup("/api/ci").AddEndpointFilter(RequireApiKey);
+        // Key in X-Api-Key (Authorization carries the CI agent's codebeamer login): Ci:ApiKey or an Api:Clients key.
+        var api = app.MapGroup("/api/ci").AddEndpointFilter(RequireCiEnabled);
+        var read = Api.ApiAuth.Require(CbBridge.Core.Application.Api.Scopes.RunsRead, allowBearer: false);
+        var start = Api.ApiAuth.Require(CbBridge.Core.Application.Api.Scopes.RunsStart, allowBearer: false);
 
         api.MapPost("/runs", async (HttpContext http, CiRunRequest request, CiRunner runner) =>
         {
@@ -25,42 +28,38 @@ public static class CiEndpoints
             if (credentials is null)
                 return Problem(401, "Send the CI agent's codebeamer account in the Authorization header (Basic user:password or Bearer token).");
 
-            var (job, status, error) = await runner.StartAsync(request, credentials, http.RequestAborted);
+            var (job, status, error) = await runner.StartAsync(request, credentials, http.RequestAborted, Api.ApiAuth.Client(http)?.Name);
             if (job is null) return Problem(status, error!);
 
             var self = $"{http.Request.Scheme}://{http.Request.Host}{http.Request.PathBase}/api/ci/runs/{job.Id}";
             return Results.Json(new { id = job.Id, state = job.State.ToString(), statusUrl = self, junitUrl = self + "/junit" }, statusCode: 202);
-        });
+        }).AddEndpointFilter(start);
 
         api.MapGet("/runs", (CiJobStore store) =>
-            Results.Json(store.All().Take(50).Select(j => new { j.Id, State = j.State.ToString(), j.Kind, j.Target, j.FrameworkUrl, j.Label, j.CreatedAt, j.FinishedAt })));
+            Results.Json(store.All().Take(50).Select(j => new { j.Id, State = j.State.ToString(), j.Kind, j.Target, j.FrameworkUrl, j.Label, j.CreatedAt, j.FinishedAt })))
+            .AddEndpointFilter(read);
 
         api.MapGet("/runs/{id}", (string id, int? logFrom, CiJobStore store) =>
-            store.Get(id) is { } job ? Results.Json(CiJobView.From(job, logFrom ?? 0)) : Problem(404, $"No CI job {id}."));
+            store.Get(id) is { } job ? Results.Json(CiJobView.From(job, logFrom ?? 0)) : Problem(404, $"No CI job {id}."))
+            .AddEndpointFilter(read);
 
         api.MapGet("/runs/{id}/junit", (string id, CiJobStore store) =>
-            store.Get(id) is { } job ? Results.Content(JUnitReport.Write(job), "application/xml", Encoding.UTF8) : Problem(404, $"No CI job {id}."));
+            store.Get(id) is { } job ? Results.Content(JUnitReport.Write(job), "application/xml", Encoding.UTF8) : Problem(404, $"No CI job {id}."))
+            .AddEndpointFilter(read);
 
         api.MapPost("/runs/{id}/abort", (string id, CiJobStore store) =>
         {
             if (store.Get(id) is not { } job) return Problem(404, $"No CI job {id}.");
             if (!job.IsDone) { job.Abort.Cancel(); job.AddLog("abort requested via API"); }
             return Results.Json(new { id, state = job.State.ToString() });
-        });
+        }).AddEndpointFilter(start);
     }
 
-    /// <summary>API off unless Ci:Enabled; then X-Api-Key must equal Ci:ApiKey (constant-time compare).</summary>
-    private static async ValueTask<object?> RequireApiKey(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
+    /// <summary>API off unless Ci:Enabled (404).</summary>
+    private static async ValueTask<object?> RequireCiEnabled(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
     {
         var options = ctx.HttpContext.RequestServices.GetRequiredService<IOptions<CiOptions>>().Value;
-        if (!options.Enabled)
-            return Problem(404, "The CI API is disabled (Ci:Enabled = false).");
-        if (string.IsNullOrWhiteSpace(options.ApiKey))
-            return Problem(503, "The CI API is enabled but Ci:ApiKey is not set.");
-
-        var sent = ctx.HttpContext.Request.Headers["X-Api-Key"].ToString();
-        var ok = CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(sent), Encoding.UTF8.GetBytes(options.ApiKey));
-        return ok ? await next(ctx) : Problem(401, "Missing or wrong X-Api-Key.");
+        return options.Enabled ? await next(ctx) : Problem(404, "The CI API is disabled (Ci:Enabled = false).");
     }
 
     private static CiCredentials? ReadCredentials(HttpRequest request)

@@ -1,0 +1,110 @@
+@page "/history"
+@using CbBridge.Core.Application.History
+@inject CodebeamerSession Session
+@inject IResultRepository Repo
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<PageTitle>@BrandingOptions.Value.ProductName · History</PageTitle>
+
+@if (!Session.IsSignedIn)
+{
+    <SignInNotice />
+}
+else if (!Repo.Available)
+{
+    <section class="card">
+        <h1>History</h1>
+        <p class="error">Run history is not available: @Repo.Status</p>
+        <p class="hint">Results are still written as files to the results folder.</p>
+    </section>
+}
+else
+{
+    <section class="card">
+        <div class="section-head">
+            <h1>History <span class="count">@_total run(s)</span></h1>
+            <span class="hint">Every run from the console and from CI</span>
+        </div>
+        <form class="row-wrap" @onsubmit="SearchAsync">
+            <label class="grow">Search
+                <input @bind="_text" placeholder="name, ID, test configuration, label, user, bench…" />
+            </label>
+            <label>Source
+                <select @bind="_source">
+                    <option value="">all</option>
+                    <option value="console">console</option>
+                    <option value="ci">CI</option>
+                    <option value="mcp">AI agent (MCP)</option>
+                </select>
+            </label>
+            <label>Contains verdict
+                <select @bind="_verdict">
+                    <option value="">any</option>
+                    <option value="FAILED">FAILED</option>
+                    <option value="TIMEOUT">TIMEOUT</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="BLOCKED">BLOCKED</option>
+                    <option value="PASSED">PASSED</option>
+                </select>
+            </label>
+            <button class="btn primary" type="submit">Search</button>
+        </form>
+
+        @if (_runs.Count == 0)
+        {
+            <p class="empty">No runs found.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Started</th><th>Source</th><th>By</th><th>What</th><th>Test system</th><th>Result</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _runs)
+                        {
+                            <tr>
+                                <td class="mono small">@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td><span class="badge">@r.Source</span></td>
+                                <td>@r.StartedBy</td>
+                                <td>@r.Selection@if (!string.IsNullOrWhiteSpace(r.Label)) {<br /><small class="muted">@r.Label</small>}</td>
+                                <td class="mono small">@r.FrameworkUrl</td>
+                                <td><RunBar Run="r" /></td>
+                                <td class="action"><a class="btn small" href="/history/@r.Id">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="row-wrap">
+                <button class="btn small" @onclick="() => PageAsync(-1)" disabled="@(_offset == 0)">← Newer</button>
+                <span class="muted">@(_offset + 1)–@(_offset + _runs.Count) of @_total</span>
+                <button class="btn small" @onclick="() => PageAsync(1)" disabled="@(_offset + _runs.Count >= _total)">Older →</button>
+            </div>
+        }
+        <p class="muted">@Repo.Status</p>
+    </section>
+}
+
+@code {
+    private const int PageSize = 50;
+    private string _text = "", _source = "", _verdict = "";
+    private int _offset, _total;
+    private IReadOnlyList<RunSummary> _runs = Array.Empty<RunSummary>();
+
+    protected override void OnInitialized() => Load();
+
+    private Task SearchAsync() { _offset = 0; Load(); return Task.CompletedTask; }
+
+    private Task PageAsync(int direction)
+    {
+        _offset = Math.Max(0, _offset + direction * PageSize);
+        Load();
+        return Task.CompletedTask;
+    }
+
+    private void Load()
+    {
+        if (!Session.IsSignedIn || !Repo.Available) return;
+        (_runs, _total) = Repo.ListRuns(new RunQuery(_text, _source, _verdict, Limit: PageSize, Offset: _offset));
+    }
+}

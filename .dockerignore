@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/data/
+**/results/
+.git/
+.github/
+tests/
+docs/
+*.zip

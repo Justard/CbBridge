@@ -1,0 +1,7 @@
+@inject NavigationManager Nav
+@* Shown by pages that need a codebeamer sign-in; brings the user back here afterwards. *@
+<section class="card narrow">
+    <h1>Not signed in</h1>
+    <p>Sign in to codebeamer first. The login lives only in this browser tab, so a link opened in a new tab asks again.</p>
+    <a class="btn primary" href="@($"/?returnUrl={Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri))}")">Sign in and come back</a>
+</section>

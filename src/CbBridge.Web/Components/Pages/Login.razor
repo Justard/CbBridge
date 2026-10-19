@@ -66,6 +66,12 @@
         _user = Session.User;
     }
 
+    /// <summary>After sign-in, go back to a shared link (history/result) — only paths inside the bridge.</summary>
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    private string? SafeReturnUrl =>
+        !string.IsNullOrWhiteSpace(ReturnUrl) && !ReturnUrl.Contains("//") && !ReturnUrl.Contains('\\') && !ReturnUrl.Contains(':')
+            ? "/" + ReturnUrl.TrimStart('/') : null;
+
     private async Task SignInAsync()
     {
         _busy = true;
@@ -75,7 +81,7 @@
         {
             await Reader.PingAsync();
             Session.MarkSignedIn();
-            Nav.NavigateTo("/console");
+            Nav.NavigateTo(SafeReturnUrl ?? "/console");
         }
         catch (Exception ex)
         {

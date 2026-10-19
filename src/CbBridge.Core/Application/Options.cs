@@ -68,6 +68,17 @@ public sealed class FrameworkOptions
     public string CancelPath { get; set; } = "/cancel/{itemId}";
     /// <summary>Used by "Test connection". A 404 still counts as reachable (framework has no health route).</summary>
     public string HealthPath { get; set; } = "/health";
+    /// <summary>Known test systems, shown on the Benches page and as suggestions: [{ "Name": "Bench A", "Url": "http://10.0.0.12:5001" }].</summary>
+    public List<Editing.SavedTestSystem> Benches { get; set; } = new();
+
+    /// <summary>Contract 1.1 (optional): live step progress of a running test.</summary>
+    public string ProgressPath { get; set; } = "/progress/{itemId}";
+    /// <summary>How often the bridge asks for progress while a test runs (0 = never).</summary>
+    public double ProgressPollSeconds { get; set; } = 1;
+    /// <summary>Contract 1.1 (optional): field of the result with files for codebeamer [{name, contentType, contentBase64}].</summary>
+    public string AttachmentsField { get; set; } = "attachments";
+    /// <summary>Attachments larger than this are not uploaded (logged instead).</summary>
+    public int MaxAttachmentMb { get; set; } = 20;
     /// <summary>HTTP wait = timeLimitSec + this. Only matters if the framework itself freezes.</summary>
     public int GraceSeconds { get; set; } = 15;
     /// <summary>Field(s) in the result JSON that hold the verdict.</summary>
@@ -106,4 +117,67 @@ public sealed class PostBackOptions
 {
     /// <summary>true = log the upload request instead of sending it. Safe default for a real server.</summary>
     public bool DryRun { get; set; } = true;
+}
+
+/// <summary>
+/// appsettings.json → "Analysis": failed tests are sent to an AI agent (n8n, Zapier, Make, a Python service …)
+/// over a plain webhook. The agent answers with a short comment for developers — right away, or later through
+/// the callback URL. The agent itself lives in its own repository; see docs/ai-analysis.md for the contract.
+/// </summary>
+public sealed class AnalysisOptions
+{
+    /// <summary>Off by default: test data leaves the bridge, so an admin must switch it on knowingly.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>The agent's webhook, e.g. https://n8n.example.com/webhook/cbbridge-analysis.</summary>
+    public string WebhookUrl { get; set; } = "";
+
+    /// <summary>Optional auth header the bridge sends to the agent (e.g. "Authorization" or n8n Header Auth name).</summary>
+    public string AuthHeader { get; set; } = "Authorization";
+    /// <summary>Secret value for AuthHeader, e.g. "Bearer …". Set via environment variable Analysis__AuthValue.</summary>
+    public string AuthValue { get; set; } = "";
+
+    /// <summary>
+    /// Public address of this bridge as the agent can reach it, e.g. https://bridge.example.com. Needed for
+    /// asynchronous answers (callback). Empty = the agent must answer in the webhook response itself.
+    /// </summary>
+    public string CallbackBaseUrl { get; set; } = "";
+
+    /// <summary>Verdicts that trigger an analysis.</summary>
+    public string[] Verdicts { get; set; } = Array.Empty<string>();
+    public string[] EffectiveVerdicts => Verdicts.Length > 0 ? Verdicts : new[] { "FAILED", "TIMEOUT", "ERROR" };
+
+    /// <summary>How long the webhook call itself may take (synchronous answer included).</summary>
+    public int RequestTimeoutSec { get; set; } = 90;
+    /// <summary>How long a callback is waited for after the agent accepted the job.</summary>
+    public int CallbackWaitSec { get; set; } = 900;
+
+    /// <summary>Fields of the agent's answer that hold the comment (first one found wins).</summary>
+    public string CommentFields { get; set; } = "comment,summary,output,text";
+
+    /// <summary>Hints passed to the agent; it decides what to do with them.</summary>
+    public string Language { get; set; } = "en";
+    public int MaxWords { get; set; } = 80;
+
+    /// <summary>Framework answers longer than this are cut before sending.</summary>
+    public int MaxFrameworkChars { get; set; } = 20000;
+
+    /// <summary>Add the comment to the codebeamer test run (only when results are posted back there).</summary>
+    public bool PostComment { get; set; } = true;
+    /// <summary>ALIGN WITH YOUR INSTANCE: Swagger v3 path for adding a comment to an item.</summary>
+    public string CommentPath { get; set; } = "/items/{itemId}/comments";
+    public string CommentPrefix { get; set; } = "AI analysis (automatic, please verify):";
+}
+
+/// <summary>
+/// appsettings.json → "Access": who may write to codebeamer. Everyone with a codebeamer login may run tests;
+/// posting results back (and creating test runs, adding comments) can be limited to named accounts.
+/// </summary>
+public sealed class AccessOptions
+{
+    /// <summary>codebeamer user names allowed to post back; empty = everyone. Include the CI agent's account.</summary>
+    public string[] PostBackUsers { get; set; } = Array.Empty<string>();
+
+    public bool MayPostBack(string user) =>
+        PostBackUsers.Length == 0 || PostBackUsers.Contains(user, StringComparer.OrdinalIgnoreCase);
 }

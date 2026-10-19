@@ -44,3 +44,46 @@ public sealed class SavedTestSystem
     public string Name { get; set; } = "";
     public string Url { get; set; } = "";
 }
+
+/// <summary>
+/// A saved run setup ("Nightly Bluetooth on Bench A"): the run list as it was (including edits), the run options
+/// and the test system. Kept in the user's browser.
+/// </summary>
+public sealed class RunPreset
+{
+    public string Name { get; set; } = "";
+    public DateTime SavedAt { get; set; }
+    public string FrameworkUrl { get; set; } = "";
+    public RunOptions Options { get; set; } = new();
+    public List<PresetTest> Tests { get; set; } = new();
+}
+
+public sealed class PresetTest
+{
+    public string PayloadJson { get; set; } = "";
+    public bool IsLocal { get; set; }
+    public string? SourceTestCaseId { get; set; }
+    public string? GroupName { get; set; }
+    public bool Include { get; set; } = true;
+    public bool Analyze { get; set; } = true;
+
+    public static PresetTest From(TestRunPayload p, bool include) => new()
+    {
+        PayloadJson = p.ToJson(), IsLocal = p.IsLocal, SourceTestCaseId = p.SourceTestCaseId, GroupName = p.GroupName,
+        Include = include, Analyze = p.Analyze
+    };
+
+    public TestRunPayload? ToPayload()
+    {
+        try
+        {
+            var p = TestRunPayload.FromJson(PayloadJson);
+            p.IsLocal = IsLocal;
+            p.SourceTestCaseId = SourceTestCaseId;
+            p.GroupName = GroupName;
+            p.Analyze = Analyze;
+            return p;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+}

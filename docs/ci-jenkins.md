@@ -67,7 +67,7 @@ The API is **off by default**: with `Enabled: false` every `/api/ci` call answer
    | ID | Kind | Content |
    |---|---|---|
    | `codebeamer-ci-agent` | Username with password | The CI agent's codebeamer account (needs read access, and write access to test runs if results are posted) |
-   | `cb-test-bridge-api-key` | Secret text | The bridge's `Ci:ApiKey` |
+   | `cb-test-bridge-api-key` | Secret text | A bridge API key with `runs:start` + `runs:read` (an `Api:Clients` entry, see [API](api.md#keys-and-scopes)), or the older single `Ci:ApiKey` |
 
    With a codebeamer API token instead of a password, store it as *Secret text* and expose it as `CB_TOKEN`.
 
@@ -89,6 +89,7 @@ The API is **off by default**: with `Enabled: false` every `/api/ci` call answer
 | `FRAMEWORK_URL` | `http://bench-a:5001` | Test system; empty = bridge default |
 | `CREATE_NEW_RUNS` | ✔ | New codebeamer test run per test case |
 | `POST_BACK` | ✔ | Write results to codebeamer |
+| `AI_ANALYSIS` | ☐ | Send failed tests to the AI agent; comments appear in the JUnit report ([AI analysis](ai-analysis.md)) |
 
 Build result:
 
@@ -108,7 +109,7 @@ values, or trigger the job remotely (Jenkins *Trigger builds remotely*) from ano
 ```text
 python bridge_ci.py --bridge URL  (--category ID | --testablauf ID | --test-case ID | --test-run ID)
                     [--only IDS] [--release NAME] [--versions NAMES] [--framework-url URL]
-                    [--codebeamer-url URL] [--no-new-runs] [--no-post-back]
+                    [--codebeamer-url URL] [--no-new-runs] [--no-post-back] [--analyze]
                     [--time-limit S] [--overall-limit S] [--label TEXT]
                     [--junit FILE] [--poll S] [--max-wait S] [--insecure]
 ```
@@ -124,7 +125,7 @@ All calls need `X-Api-Key`. Starting a run also needs the codebeamer login in `A
 | Call | Answer |
 |---|---|
 | `POST /api/ci/runs` | `202 {id, state, statusUrl, junitUrl}` · `400` bad request · `401` wrong key or codebeamer login · `404` API disabled |
-| `GET /api/ci/runs/{id}?logFrom=n` | Status, summary, results, log lines from `n` on |
+| `GET /api/ci/runs/{id}?logFrom=n` | Status, summary, results, log lines from `n` on, and `runId` — the run in the history ([/history/{runId}](user-guide.md#9-history), `/api/v1/runs/{runId}`) |
 | `GET /api/ci/runs/{id}/junit` | JUnit XML |
 | `POST /api/ci/runs/{id}/abort` | Stops the job (and the running test) |
 | `GET /api/ci/runs` | The latest 50 jobs |
@@ -140,6 +141,7 @@ Request body (exactly one of `category`, `testablauf`, `testRun`, `testCase` —
   "frameworkUrl": "http://bench-a:5001",
   "createNewRuns": true,
   "postBack": true,
+  "analyze": false,
   "timeLimitSec": 120,
   "overallLimitSec": 3600,
   "label": "jenkins-nightly-42"
@@ -156,7 +158,8 @@ curl -s -X POST "$BRIDGE_URL/api/ci/runs" \
 
 ## Security
 
-- The API is **disabled** unless `Ci:Enabled` is true, and then requires the **API key** (compared in constant time).
+- The API is **disabled** unless `Ci:Enabled` is true, and then requires an **API key** with the right scope
+  (`runs:start` to start or abort, `runs:read` for status and JUnit; compared in constant time).
 - The **codebeamer login** of the CI agent comes with each start request, is checked against codebeamer before the
   job is accepted, kept in memory only while the job runs, and never written to disk or logs.
 - Job IDs are random; status and JUnit calls also require the API key.

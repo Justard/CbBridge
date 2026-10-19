@@ -2,6 +2,8 @@ using CbBridge.Web.Components;
 using CbBridge.Core.Infrastructure;
 using CbBridge.Web.Infrastructure.Browser;
 using CbBridge.Web.Ci;
+using CbBridge.Web.Api;
+using CbBridge.Web.Mcp;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,7 +11,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddBridge(builder.Configuration);
-builder.Services.AddScoped<BrowserStore>();   // web only: per-user settings in the browser
+builder.Services.AddScoped<BrowserStore>();
+builder.Services.AddScoped<CbBridge.Web.Infrastructure.History.RerunInbox>();   // history → console   // web only: per-user settings in the browser
 
 var app = builder.Build();
 
@@ -31,6 +34,13 @@ var app = builder.Build();
     }
 }
 
+// API client configuration problems (unknown scope, missing key) → startup warnings
+foreach (var problem in app.Services.GetRequiredService<CbBridge.Core.Application.Api.ApiClientRegistry>().Problems())
+    app.Logger.LogWarning("Api:Clients: {Problem}", problem);
+
+// Open (create/migrate) the run history database now, so a missing SQLite library shows in the startup log.
+app.Services.GetRequiredService<CbBridge.Core.Application.Abstractions.IResultRepository>();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -42,6 +52,21 @@ app.UseStaticFiles();
 app.UseAntiforgery();
 
 app.MapCiApi();   // Jenkins / CI — off unless Ci:Enabled
+app.MapAnalysisCallback();   // AI agent answers — off unless Analysis:Enabled
+app.MapHistoryApi();         // /api/v1 for agents, dashboards, scripts — off unless Api:Enabled
+app.MapMcp();                // /mcp — the same, as MCP tools for AI agents — off unless Api:Enabled
+app.MapGet("/health", () => Results.Json(new { status = "ok" }));   // load balancers / uptime checks
+app.MapGet("/metrics", (HttpContext http, CbBridge.Core.Application.BridgeMetrics metrics,
+    CbBridge.Core.Application.Execution.BenchRegistry benches,
+    Microsoft.Extensions.Options.IOptions<CbBridge.Core.Application.Api.BridgeOptions> bridge,
+    CbBridge.Core.Application.Api.ApiClientRegistry clients) =>
+{
+    // Prometheus text. Public only when Bridge:MetricsPublic; otherwise a key with history:read.
+    var client = clients.Find(ApiAuth.PresentedKey(http.Request, allowBearer: true));
+    if (!bridge.Value.MetricsPublic && client?.Can(CbBridge.Core.Application.Api.Scopes.HistoryRead) != true)
+        return Results.StatusCode(401);
+    return Results.Text(metrics.Prometheus(benches.Active.Count), "text/plain; version=0.0.4");
+});
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

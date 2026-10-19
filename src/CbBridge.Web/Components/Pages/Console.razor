@@ -15,6 +15,10 @@
 @inject IFrameworkClient Framework
 @inject CbBridge.Core.Infrastructure.Framework.FrameworkTarget Target
 @inject CbBridge.Web.Infrastructure.Browser.BrowserStore Store
+@inject CbBridge.Web.Infrastructure.History.RerunInbox Inbox
+@inject CbBridge.Core.Application.Results.RunRecorder Recorder
+@inject CbBridge.Core.Application.Execution.BenchRegistry Benches
+@inject IOptions<AccessOptions> AccessOptions
 
 <PageTitle>@BrandingOptions.Value.ProductName · Console</PageTitle>
 
@@ -123,6 +127,22 @@ else
                 <button class="btn small" @onclick="() => _rows.Clear()" disabled="@(_running || _rows.Count == 0)">Clear list</button>
             </div>
         </div>
+        <div class="presets">
+            <span class="muted">Presets</span>
+            @foreach (var preset in _presets)
+            {
+                <span class="chip-item">
+                    <button class="chip-use" @onclick="() => LoadPresetAsync(preset)" disabled="@_running" title="@($"{preset.Tests.Count} tests · {preset.FrameworkUrl} · saved {preset.SavedAt.ToLocalTime():yyyy-MM-dd HH:mm}")">@preset.Name <span class="mono">@preset.Tests.Count</span></button>
+                    <button class="chip-x" aria-label="@($"Delete preset {preset.Name}")" @onclick="() => DeletePresetAsync(preset)">✕</button>
+                </span>
+            }
+            <input class="preset-name" @bind="_presetName" @bind:event="oninput" placeholder="Save run list + settings as…" aria-label="Preset name" />
+            <button class="btn small" @onclick="SavePresetAsync" disabled="@(_running || _rows.Count == 0 || string.IsNullOrWhiteSpace(_presetName))">Save preset</button>
+        </div>
+        @if (_inboxNote is not null)
+        {
+            <p class="inbox">↻ @_inboxNote <button class="btn small" @onclick="() => _inboxNote = null">OK</button></p>
+        }
 
         @if (_rows.Count == 0)
         {
@@ -137,6 +157,10 @@ else
                             aria-label="@((row.Expanded ? "Collapse " : "Expand ") + row.Original.ItemId)"
                             @onclick="() => row.Expanded = !row.Expanded">@(row.Expanded ? "▾" : "▸")</button>
                     <label class="check"><input type="checkbox" @bind="row.Include" disabled="@_running" /> Include</label>
+                    @if (Orchestrator.AnalysisAvailable && _opts.Analyze)
+                    {
+                        <label class="check" title="If this test fails, send it to the AI agent for a short comment"><input type="checkbox" @bind="row.Analyze" disabled="@_running" /> AI analysis</label>
+                    }
                     <span class="mono id">#@row.Original.ItemId</span>
                     @if (!row.Expanded)
                     {
@@ -241,6 +265,10 @@ else
             {
                 <p class="@(_fwOk ? "ok" : "error")" role="status">@_fwStatus</p>
             }
+            @if (!_running && Benches.BusyWith(Target.BaseUrl) is { } busy)
+            {
+                <p class="warn" role="status">⚠ This test system is busy: @busy.Who (@busy.Source) runs “@busy.Selection” since @busy.Since.ToString("HH:mm") — test @(busy.Done + 1)/@busy.Total@(busy.Current is null ? "" : $": {busy.Current}"). Starting now would run tests on the same bench at the same time. <a href="/benches">All benches</a></p>
+            }
             <div class="row-wrap">
                 <label>Save this address as
                     <input @bind="_fwName" @bind:event="oninput" placeholder="e.g. Bench A" />
@@ -281,7 +309,11 @@ else
 
                 <fieldset class="postback">
                     <legend>Post-back to codebeamer</legend>
-                    <label class="check"><input type="checkbox" @bind="_opts.PostBack" disabled="@_running" />
+                    @if (!MayPostBack)
+                    {
+                        <p class="warn">Your account (@Session.User) may run tests but not write to codebeamer (Access:PostBackUsers). Results stay in the bridge.</p>
+                    }
+                    <label class="check"><input type="checkbox" @bind="_opts.PostBack" disabled="@(_running || !MayPostBack)" />
                         <span><strong>Post results back</strong><br /><small>Off = results stay in this console only</small></span>
                     </label>
                     <label class="check"><input type="checkbox" @bind="_opts.Continuous" disabled="@(_running || !_opts.PostBack)" />
@@ -301,6 +333,20 @@ else
                         @if (string.IsNullOrWhiteSpace(RmOptions.Value.TestRunTrackerId))
                         {
                             <span class="error small">RunMultiple:TestRunTrackerId is not set in appsettings.json — new test runs cannot be created.</span>
+                        }
+                    </fieldset>
+                }
+
+                @if (Orchestrator.AnalysisAvailable)
+                {
+                    <fieldset class="postback">
+                        <legend>AI analysis</legend>
+                        <label class="check"><input type="checkbox" @bind="_opts.Analyze" disabled="@_running" />
+                            <span><strong>Analyse failed tests</strong><br /><small>Each failed test (with its <em>AI analysis</em> box ticked) goes to the AI agent. Its short comment for developers appears here when ready and, with post-back on, is added to the codebeamer test run. The run does not wait for it.</small></span>
+                        </label>
+                        @if (_opts.Analyze)
+                        {
+                            <span class="small muted">@_rows.Count(r => r.Include && r.Analyze) of @_rows.Count(r => r.Include) included tests will be analysed if they fail</span>
                         }
                     </fieldset>
                 }
@@ -339,7 +385,7 @@ else
                                         <td>@r.Name</td>
                                         <td><span class="badge v-@r.Verdict.ToString().ToLowerInvariant()">@r.Verdict.ToString().ToUpperInvariant()</span></td>
                                         <td class="mono">@(r.Duration == TimeSpan.Zero ? "—" : $"{r.Duration.TotalSeconds:0.0}s")</td>
-                                        <td class="msg">@r.Message</td>
+                                        <td class="msg">@r.Message@if (r.Verdict == Verdict.Running && r.StepsDone > 0) {<span class="live-steps"><span class="live-bar" aria-hidden="true"><span style="width:@(r.StepsTotal is > 0 ? Math.Min(100, r.StepsDone * 100 / r.StepsTotal.Value) : 0)%"></span></span><small>step @r.StepsDone@(r.StepsTotal is > 0 ? $"/{r.StepsTotal}" : "") done · @r.LastStep</small></span>}@if (r.AnalysisState == AnalysisState.Pending) {<br /><small class="ai-pending">✎ AI analysis running…</small>}</td>
                                         <td class="mono small" title="@r.PostMessage">@UploadLabel(r)</td>
                                         <td class="action">
                                             @if (r.RawJson is not null)
@@ -348,6 +394,25 @@ else
                                             }
                                         </td>
                                     </tr>
+                                    @if (r.AnalysisState is AnalysisState.Done or AnalysisState.NoAnswer or AnalysisState.Failed)
+                                    {
+                                        <tr class="ai-row">
+                                            <td colspan="7">
+                                                @if (r.AnalysisComment is not null)
+                                                {
+                                                    <span class="ai-label">✎ AI analysis</span> @r.AnalysisComment
+                                                    @if (r.AnalysisPosted != PostState.NotPosted)
+                                                    {
+                                                        <small class="muted" title="@r.AnalysisPostMessage"> · codebeamer comment: @(r.AnalysisPosted == PostState.DryRun ? "dry run" : r.AnalysisPosted.ToString().ToLowerInvariant())</small>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <small class="muted">✎ AI analysis: no comment (@r.AnalysisState) — see log</small>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
                                     @if (_openResult == r.ItemId && r.RawJson is not null)
                                     {
                                         <tr class="raw-row"><td colspan="7"><pre>@Pretty(r.RawJson)</pre></td></tr>
@@ -356,6 +421,10 @@ else
                             </tbody>
                         </table>
                     </div>
+                }
+                @if (_record is not null && !_running && Recorder.HistoryAvailable)
+                {
+                    <p class="muted">Saved as run <a href="/history/@_record.Id">@_record.Id</a> — compare with earlier runs, rerun failed tests, share a result link.</p>
                 }
                 <div class="log mono" aria-live="polite">
                     @foreach (var line in _log.TakeLast(200))
@@ -406,6 +475,50 @@ else
     private List<SavedTest> _myTests = new();
     private List<SavedTestSystem> _systems = new();
     private string? _libraryNote;
+    private string? _inboxNote;
+    private const string PresetsKey = "presets";
+    private List<RunPreset> _presets = new();
+    private string _presetName = "";
+    private bool MayPostBack => AccessOptions.Value.MayPostBack(Session.User);
+
+    private async Task SavePresetAsync()
+    {
+        var name = _presetName.Trim();
+        var preset = new RunPreset
+        {
+            Name = name, SavedAt = DateTime.UtcNow, FrameworkUrl = Target.BaseUrl, Options = _opts.Clone(),
+            Tests = _rows.Where(r => r.IsValid).Select(r => PresetTest.From(r.ToPayload(), r.Include)).ToList()
+        };
+        _presets.RemoveAll(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        _presets.Add(preset);
+        _presets = _presets.OrderBy(p => p.Name).ToList();
+        _presetName = "";
+        await Store.SaveAsync(PresetsKey, _presets);
+        _inboxNote = $"Saved preset “{name}” with {preset.Tests.Count} test(s), the run settings and {preset.FrameworkUrl}.";
+    }
+
+    private async Task LoadPresetAsync(RunPreset preset)
+    {
+        _rows.Clear();
+        foreach (var t in preset.Tests)
+            if (t.ToPayload() is { } p) _rows.Add(new PayloadRow(p) { Include = t.Include, Expanded = preset.Tests.Count <= 3 });
+        _opts.DefaultTimeLimitSec = preset.Options.DefaultTimeLimitSec;
+        _opts.OverallLimitSec = preset.Options.OverallLimitSec;
+        _opts.PostBack = preset.Options.PostBack && MayPostBack;
+        _opts.Continuous = preset.Options.Continuous;
+        _opts.CreateNewRuns = preset.Options.CreateNewRuns;
+        _opts.Analyze = preset.Options.Analyze;
+        _inboxNote = $"Loaded preset “{preset.Name}”: {_rows.Count} test(s) as saved {preset.SavedAt.ToLocalTime():yyyy-MM-dd} — review, then start.";
+        if (!string.IsNullOrWhiteSpace(preset.FrameworkUrl)) { _fwUrl = preset.FrameworkUrl; await CheckFrameworkAsync(); }
+    }
+
+    private async Task DeletePresetAsync(RunPreset preset)
+    {
+        _presets.Remove(preset);
+        await Store.SaveAsync(PresetsKey, _presets);
+    }
+
+    private void OnBenchesChanged() => _ = InvokeAsync(StateHasChanged);
     private string _fwUrl = "";
     private string _fwName = "";
     private string? _fwStatus;
@@ -421,8 +534,24 @@ else
         if (!firstRender || !Session.IsSignedIn) return;
         _myTests = await Store.LoadAsync<List<SavedTest>>(MyTestsKey) ?? new();
         _systems = await Store.LoadAsync<List<SavedTestSystem>>(SystemsKey) ?? new();
+        _presets = await Store.LoadAsync<List<RunPreset>>(PresetsKey) ?? new();
+        Benches.Changed += OnBenchesChanged;
+        if (!MayPostBack) { _opts.PostBack = false; _opts.CreateNewRuns = false; }
         var last = await Store.LoadAsync<string>(LastSystemKey);
         if (last is not null && Target.TrySet(last) is null) _fwUrl = Target.BaseUrl;
+
+        // tests sent here from History ("Rerun failed", "Run on this bench")
+        var (payloads, note, bench) = Inbox.Take();
+        if (payloads.Count > 0)
+        {
+            foreach (var p in payloads)
+            {
+                if (p.TimeLimitSec <= 0) p.TimeLimitSec = _opts.DefaultTimeLimitSec;
+                _rows.Insert(0, new PayloadRow(p) { Expanded = payloads.Count <= 3 });
+            }
+            _inboxNote = note;
+            if (bench is not null) { _fwUrl = bench; await CheckFrameworkAsync(); }
+        }
         StateHasChanged();
     }
 
@@ -741,7 +870,7 @@ else
             {
                 Source = "console",
                 StartedBy = Session.User,
-                Selection = string.Join(", ", queue.Select(p => "#" + p.ItemId)),
+                Selection = string.Join(", ", queue.Take(8).Select(p => "#" + (p.SourceTestCaseId ?? p.ItemId))) + (queue.Count > 8 ? $" … (+{queue.Count - 8})" : ""),
                 FrameworkUrl = Target.BaseUrl
             };
             await Orchestrator.RunAsync(queue, _board, _opts.Clone(), LogAsync, () => InvokeAsync(StateHasChanged), _cts.Token, _record);
@@ -815,6 +944,7 @@ else
 
     public void Dispose()
     {
+        Benches.Changed -= OnBenchesChanged;
         _cts?.Cancel();
         _ticker?.Dispose();
     }

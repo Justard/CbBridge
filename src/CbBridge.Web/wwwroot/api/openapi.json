@@ -1,0 +1,1927 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CB Test Bridge API",
+    "version": "1.0.0",
+    "description": "Read the run history, start CI runs, rate AI comments. Keys and scopes: docs/api.md. The same functions are available to AI agents as MCP tools at /mcp."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Bridge"
+    },
+    {
+      "name": "History"
+    },
+    {
+      "name": "Audit"
+    },
+    {
+      "name": "CI"
+    },
+    {
+      "name": "AI analysis"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Bridge"
+        ],
+        "summary": "Liveness (no key)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "tags": [
+          "Bridge"
+        ],
+        "summary": "Who am I, what is switched on",
+        "description": "Scope: `history:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "List runs, newest first",
+        "description": "Scope: `history:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "text",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search in names, IDs, test configuration, label, user, bench"
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "console",
+                "ci"
+              ]
+            },
+            "description": ""
+          },
+          {
+            "name": "verdict",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PASSED",
+                "FAILED",
+                "BLOCKED",
+                "TIMEOUT",
+                "ABORTED",
+                "ERROR",
+                "NOTRUN",
+                "QUEUED",
+                "RUNNING"
+              ]
+            },
+            "description": "Runs containing this verdict"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": ""
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": ""
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 500
+            },
+            "description": ""
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": ""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RunSummary"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{runId}": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "One run with all its results (and each test's previous verdict)",
+        "description": "Scope: `history:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{runId}/results/{position}": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "One result with request, framework answer and AI analysis",
+        "description": "Scope: `history:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{runId}/results/{position}/compare": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Compare with the previous run and the last passing run",
+        "description": "Scope: `history:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/Result"
+                    },
+                    "previous": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Result"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastPassing": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Result"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "responseChangesSinceLastPass": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Changed lines of the framework answer, '+ ' now / '- ' then"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{runId}/results/{position}/feedback": {
+      "post": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Rate the AI comment",
+        "description": "Scope: `feedback:write`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "helpful": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "description": "true / false, null clears"
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tests/{testKey}/history": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "All executions of one test, newest first",
+        "description": "Scope: `history:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "testKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "'tc:10232', 'item:88131', or a bare ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "description": ""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "testKey": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "passRate": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/HistoryPoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Who wrote what to codebeamer",
+        "description": "Scope: `audit:read`.",
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 200
+            },
+            "description": ""
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "e.g. item:88132"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Run history not available",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ci/runs": {
+      "post": {
+        "tags": [
+          "CI"
+        ],
+        "summary": "Start a run (Jenkins / any CI)",
+        "description": "Scope: `runs:start`.\n\n`Authorization` carries the CI agent's own codebeamer login (Basic or Bearer); the API key goes in `X-Api-Key`.",
+        "security": [
+          {
+            "apiKey": [],
+            "codebeamer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CiRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "statusUrl": {
+                      "type": "string"
+                    },
+                    "junitUrl": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "CI"
+        ],
+        "summary": "Latest 50 jobs",
+        "description": "Scope: `runs:read`.",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ci/runs/{id}": {
+      "get": {
+        "tags": [
+          "CI"
+        ],
+        "summary": "Job status, results, log",
+        "description": "Scope: `runs:read`.",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "logFrom",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Only log lines from here on"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ci/runs/{id}/junit": {
+      "get": {
+        "tags": [
+          "CI"
+        ],
+        "summary": "JUnit XML",
+        "description": "Scope: `runs:read`.",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JUnit",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ci/runs/{id}/abort": {
+      "post": {
+        "tags": [
+          "CI"
+        ],
+        "summary": "Stop a job and the running test",
+        "description": "Scope: `runs:start`.",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown or missing API key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Key lacks the scope",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or this API is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analysis/callback/{analysisId}": {
+      "post": {
+        "tags": [
+          "AI analysis"
+        ],
+        "summary": "AI agent sends its comment (asynchronous answer)",
+        "description": "Single-use; token from the analysis request in `X-Callback-Token`. See docs/ai-analysis.md.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "analysisId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Callback-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comment": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown/expired ID or wrong token"
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "bridgeEvent": {
+      "post": {
+        "summary": "Event sent to Events:Subscribers",
+        "description": "Headers: X-Bridge-Event (name), X-Bridge-Signature: sha256=<hex HMAC of the body with the subscriber's Secret>. With Format=text the body is {\"text\": \"…\"} instead.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx = delivered (3 attempts otherwise)"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "RunSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "startedAt",
+          "summary",
+          "link"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "examples": [
+              "20261019-071558-4b2cc5"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "console",
+              "ci"
+            ]
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "type": "string"
+          },
+          "frameworkUrl": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "passed": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "blocked": {
+                "type": "integer"
+              },
+              "timeout": {
+                "type": "integer"
+              },
+              "error": {
+                "type": "integer"
+              },
+              "notRun": {
+                "type": "integer"
+              }
+            }
+          },
+          "link": {
+            "type": "string",
+            "format": "uri",
+            "description": "Page in the bridge UI"
+          }
+        }
+      },
+      "Analysis": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "Pending",
+              "Done",
+              "NoAnswer",
+              "Failed"
+            ]
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commentUpload": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feedback": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              1,
+              -1,
+              null
+            ]
+          },
+          "feedbackBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agentAnswer": {
+            "description": "Full answer of the AI agent (detail view only)"
+          }
+        }
+      },
+      "Result": {
+        "type": "object",
+        "required": [
+          "runId",
+          "position",
+          "testKey",
+          "name",
+          "verdict"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "description": "1-based place in the run"
+          },
+          "testKey": {
+            "type": "string",
+            "description": "'tc:<id>' for test cases, 'item:<id>' for test runs, 'local:<id>' for My tests",
+            "examples": [
+              "tc:10232"
+            ]
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "testCaseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "testablauf": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "isLocal": {
+            "type": "boolean"
+          },
+          "testConfiguration": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "BLOCKED",
+              "TIMEOUT",
+              "ABORTED",
+              "ERROR",
+              "NOTRUN",
+              "QUEUED",
+              "RUNNING"
+            ]
+          },
+          "durationSec": {
+            "type": "number"
+          },
+          "message": {
+            "type": "string"
+          },
+          "codebeamerTestRunId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upload": {
+            "type": "string",
+            "enum": [
+              "NotPosted",
+              "Posted",
+              "DryRun",
+              "Failed"
+            ]
+          },
+          "savedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analysis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Analysis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previousVerdict": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "BLOCKED",
+              "TIMEOUT",
+              "ABORTED",
+              "ERROR",
+              "NOTRUN",
+              "QUEUED",
+              "RUNNING"
+            ],
+            "description": "Same test in the run before (lists only)"
+          },
+          "trend": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NEW FAIL",
+              "FIXED",
+              null
+            ]
+          },
+          "request": {
+            "description": "Exact JSON sent to the framework (detail only)"
+          },
+          "response": {
+            "description": "Framework's full answer (detail only)"
+          },
+          "uploadMessage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "link": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "RunDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "results": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "HistoryPoint": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "BLOCKED",
+              "TIMEOUT",
+              "ABORTED",
+              "ERROR",
+              "NOTRUN",
+              "QUEUED",
+              "RUNNING"
+            ]
+          },
+          "durationSec": {
+            "type": "number"
+          },
+          "testConfiguration": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aiComment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "link": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "examples": [
+              "post result FAILED"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "examples": [
+              "item:88132"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "Posted",
+              "DryRun",
+              "Failed",
+              "NotPosted"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CiRunRequest": {
+        "type": "object",
+        "description": "Exactly one of category, testablauf, testRun, testCase (ID or codebeamer link).",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "testablauf": {
+            "type": "string"
+          },
+          "testRun": {
+            "type": "string"
+          },
+          "testCase": {
+            "type": "string"
+          },
+          "onlyTestCases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "release": {
+            "type": "string"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "codebeamerUrl": {
+            "type": "string"
+          },
+          "frameworkUrl": {
+            "type": "string"
+          },
+          "createNewRuns": {
+            "type": "boolean",
+            "default": true
+          },
+          "postBack": {
+            "type": "boolean",
+            "default": true
+          },
+          "analyze": {
+            "type": "boolean",
+            "default": false
+          },
+          "timeLimitSec": {
+            "type": "integer"
+          },
+          "overallLimitSec": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "CiJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "Queued",
+              "Running",
+              "Finished",
+              "Failed",
+              "Aborted"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "frameworkUrl": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ID in the history (/api/v1/runs/{runId})"
+          },
+          "summary": {
+            "type": "object"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "logFrom": {
+            "type": "integer"
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": [
+          "event",
+          "at",
+          "run"
+        ],
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "run.started",
+              "run.finished",
+              "test.failed",
+              "analysis.done"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "run": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "startedBy": {
+                "type": "string"
+              },
+              "selection": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "frameworkUrl": {
+                "type": "string"
+              },
+              "link": {
+                "type": "string"
+              }
+            }
+          },
+          "tests": {
+            "type": "integer",
+            "description": "run.started"
+          },
+          "summary": {
+            "type": "object",
+            "description": "run.finished"
+          },
+          "problems": {
+            "type": "array",
+            "description": "run.finished: failed tests (max 50)",
+            "items": {
+              "type": "object"
+            }
+          },
+          "test": {
+            "type": "object",
+            "description": "test.failed, analysis.done"
+          },
+          "analysis": {
+            "type": "object",
+            "description": "analysis.done"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key"
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Same key as X-Api-Key (not for /api/ci)"
+      },
+      "codebeamer": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "CI agent's codebeamer account (/api/ci/runs only)"
+      }
+    }
+  }
+}

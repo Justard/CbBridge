@@ -18,6 +18,7 @@ pipeline {
         string(name: 'FRAMEWORK_URL', defaultValue: '', description: 'Test system, e.g. http://bench-a:5001 (empty = bridge default)')
         booleanParam(name: 'CREATE_NEW_RUNS', defaultValue: true, description: 'Create a new codebeamer test run per test case')
         booleanParam(name: 'POST_BACK', defaultValue: true, description: 'Write results to codebeamer')
+        booleanParam(name: 'AI_ANALYSIS', defaultValue: false, description: 'Send failed tests to the AI agent for a short comment')
     }
 
     environment {
@@ -42,6 +43,7 @@ pipeline {
                     if (params.FRAMEWORK_URL?.trim())   { args += ['--framework-url', params.FRAMEWORK_URL.trim()] }
                     if (!params.CREATE_NEW_RUNS)        { args += ['--no-new-runs'] }
                     if (!params.POST_BACK)              { args += ['--no-post-back'] }
+                    if (params.AI_ANALYSIS)             { args += ['--analyze'] }
                     def quoted = args.collect { "\"${it}\"" }.join(' ')
 
                     withCredentials([

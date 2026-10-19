@@ -11,6 +11,8 @@ For test engineers who pick tests from codebeamer, adjust them and run them on a
 - [6. Run](#6-run)
 - [7. Post results to codebeamer](#7-post-results-to-codebeamer)
 - [8. What is remembered](#8-what-is-remembered)
+- [9. History](#9-history)
+- [10. Test systems and the audit log](#10-test-systems-and-the-audit-log)
 
 ---
 
@@ -103,6 +105,13 @@ test case it came from, e.g. `#90001 · TC #10232`.
 > If the box shows *TestRunTrackerId is not set*, your administrator still has to enter where new test runs are
 > created. In dry-run mode nothing is created; the log shows what would have been sent.
 
+### Presets
+
+Above the run list: type a name and **Save preset** to keep the whole setup — the tests as they are now (including
+your edits and Include/AI boxes), the run settings and the test system. One click on the preset restores it later,
+e.g. *Nightly Bluetooth on Bench A*. Presets are kept in your browser. They store the tests as saved; to pick up
+changes made in codebeamer since, extract them again.
+
 ## 4. My tests — tests you write yourself
 
 | Action | Result |
@@ -121,6 +130,9 @@ e.g. `localhost:5001` or `10.0.0.12:8080`.
 
 - **Test connection** checks that it answers.
 - **Save this address as** "Bench A" keeps it as a one-click button. Switching to a saved system also tests the connection.
+- *Test connection* also shows what the framework supports, e.g. *contract 1.1 · cancel, progress, attachments*.
+- If someone else (another user, a CI job or an AI agent) is running tests on this system right now, a yellow
+  warning says who, what and since when. You can still start — but both runs would share the bench.
 
 ## 6. Run
 
@@ -131,7 +143,12 @@ e.g. `localhost:5001` or `10.0.0.12:8080`.
 | **Default limit per test run** | Used for test runs added from now on (each card has its own limit). |
 | **Limit for the whole run** | When it is used up, the running test is stopped and the rest are marked **NOT RUN**. |
 
-Press **Start run (N)**. Test runs are sent **one at a time**. Each result appears in the table with its verdict,
+Press **Start run (N)**. Test runs are sent **one at a time**. If the framework supports it, the running test shows a
+progress bar with the last finished step:
+
+![Live progress](images/live-progress.png)
+
+ Each result appears in the table with its verdict,
 duration and message; **JSON** shows the framework's full answer. **Abort** stops the running test and skips
 the rest.
 
@@ -151,10 +168,33 @@ the rest.
 | **Post results back** on, **Continuous repost** on | Each result is posted the moment its test finishes. |
 | **Post results back** on, **Continuous repost** off | Review first, then press **Upload results**. |
 
+Files the framework returns with a result (logs, traces) are uploaded to the codebeamer test run together with it.
+If your administrator limits who may write to codebeamer (`Access:PostBackUsers`) and you are not on the list,
+*Post results back* is switched off for you — you can still run tests.
+
 Only PASSED, FAILED, BLOCKED and TIMEOUT results are posted — never aborted, not-run or your own tests.
 The **Upload** column shows *posted*, *failed*, *dry run* or *n/a*.
 
 > If the column says **dry run**, your administrator has the bridge in safe mode: nothing is written.
+
+### AI analysis of failed tests
+
+Shown only when your administrator has connected an AI agent.
+
+![AI analysis](images/ai-analysis.png)
+
+| Where | What it does |
+|---|---|
+| **Test execution → AI analysis → Analyse failed tests** | Switches it on for this run. |
+| **AI analysis** box on each test card | Leave a test out (e.g. a known failure). |
+
+When a test fails, the run carries straight on; the row shows *AI analysis running…*. A few seconds or minutes
+later a purple **AI analysis** line appears under the result with a short hint for developers — which step,
+what to check first. With post-back on, the same text is added as a comment to the codebeamer test run
+(after *Upload results* if you upload after review).
+
+> The comment is a pointer, not a diagnosis: it is written by an AI from the test data and the framework's
+> answer. Always check it.
 
 ## 8. What is remembered
 
@@ -162,4 +202,48 @@ The **Upload** column shows *posted*, *failed*, *dry run* or *n/a*.
 |---|---|
 | **Your browser** (survives reload) | My tests, saved test systems, last framework address |
 | **Bridge server, results folder** | Every result of every run: the exact request, the framework's full answer, verdict and upload state — one file per test plus a `run.json` per run. The log shows the folder at the start of each run. Kept for 90 days by default. |
-| **Not kept** | The codebeamer login; the run list and results table on screen (reload clears them — the files stay) |
+| **Your browser** | Presets |
+| **Bridge server, history database** | Every run and result, AI comments and their ratings, the audit log — see [History](#9-history) |
+| **Not kept** | The codebeamer login; the run list and results table on screen (reload clears them — history and files stay) |
+
+## 9. History
+
+**History** (top bar) lists every run — yours, your colleagues', CI jobs and AI agents — newest first. Search by
+test name, ID, test configuration (e.g. a firmware version), user, label or bench, or show only runs that contain
+a verdict. After a run, the console links to it: *Saved as run …*.
+
+### A run
+
+![Run](images/run-detail.png)
+
+- **Previous run** shows the same test's verdict the time before. **NEW FAIL** = it passed then and fails now;
+  **FIXED** = the opposite. Look at NEW FAIL first.
+- **Rerun failed** / **Rerun all** put those tests back into the console, exactly as they were sent, for review.
+  Test cases from Run multiple get a new test run again (if that option is on). Nothing starts by itself.
+- AI comments show 👍 / 👎 — please rate them; that is how the team learns whether the AI agent helps.
+
+### A result
+
+![Result](images/result-detail.png)
+
+- **Link:** the page has its own address — paste it into a bug ticket or chat. Whoever opens it signs in once and
+  lands on the same result.
+- **History of this test:** a coloured strip (green passed, red failed, orange timeout/blocked; oldest left) and a
+  table of the last executions with their test configuration. Many colour changes without a firmware change hint at a
+  flaky test; one clean switch from green to red with a new firmware hints at a regression.
+- **Compared with the last passing run:** the framework's answer then and now, changed lines highlighted — and the
+  test configuration then and now. Switch to *Request sent* to see whether the test itself was changed.
+- **Rerun in console**, or **Run on this bench** with another test system's address — for a developer reproducing
+  the failure on their own bench.
+- The request, the framework's full answer and the AI agent's full answer are at the bottom.
+
+## 10. Test systems and the audit log
+
+**Benches** lists every test system the bridge knows (configured ones, and every one used recently): busy or idle,
+who runs what, which test it is on, when it was last used. **Check all** asks each one whether it answers and which
+contract version it speaks.
+
+![Benches](images/benches.png)
+
+**Audit** lists every write to codebeamer — results, new test runs, AI comments, attachments — with who, when and
+whether it worked. Click a target (e.g. `item:88132`) to see everything that was written to it.

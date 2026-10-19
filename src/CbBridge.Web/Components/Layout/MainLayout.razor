@@ -4,6 +4,7 @@
 @inject IOptions<BrandingOptions> BrandingOptions
 
 <header class="topbar">
+    <div class="topbar-left">
     <a class="brand" href="@(Session.IsSignedIn ? "/console" : "/")">
         <BrandMark />
         <span class="brand-text">
@@ -11,6 +12,16 @@
             <span class="brand-sub">@(string.IsNullOrWhiteSpace(BrandingOptions.Value.CompanyName) ? BrandingOptions.Value.Tagline : BrandingOptions.Value.CompanyName)</span>
         </span>
     </a>
+    @if (Session.IsSignedIn)
+    {
+        <nav class="topnav" aria-label="Main">
+            <NavLink href="/console" ActiveClass="active">Console</NavLink>
+            <NavLink href="/history" ActiveClass="active">History</NavLink>
+            <NavLink href="/benches" ActiveClass="active">Benches</NavLink>
+            <NavLink href="/audit" ActiveClass="active">Audit</NavLink>
+        </nav>
+    }
+    </div>
     <div class="topbar-right">
         @if (Session.IsSignedIn)
         {
