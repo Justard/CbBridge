@@ -1,0 +1,10 @@
+<Project>
+  <!-- One version for every project. Changed on release/* and hotfix/* branches only (see CONTRIBUTING.md).
+       The release pipeline builds tagged versions with the tag's number. -->
+  <PropertyGroup>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <Authors>Justard</Authors>
+    <Copyright>Copyright © 2026 Justard. All rights reserved.</Copyright>
+    <Product>CB Test Bridge</Product>
+  </PropertyGroup>
+</Project>
