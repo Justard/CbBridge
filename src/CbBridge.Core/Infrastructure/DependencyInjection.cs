@@ -54,6 +54,8 @@ public static class DependencyInjection
         services.AddSingleton<BenchRegistry>();
         services.AddSingleton<BridgeMetrics>();
         services.Configure<AccessOptions>(config.GetSection("Access"));
+        services.Configure<Licensing.LicensingOptions>(config.GetSection("Licensing"));
+        services.AddSingleton<Licensing.LicenceService>();
         services.AddScoped<Application.Selection.TestSelection>();
 
         // CI (Jenkins): jobs live for the whole app; each job creates its own scope with its own session

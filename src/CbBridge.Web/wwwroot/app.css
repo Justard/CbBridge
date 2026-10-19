@@ -213,3 +213,6 @@ details.raw pre { margin-top: 8px; padding: 10px; background: #F7F8F5; border-ra
 .warn { color: #7A4206; background: #FBEFD9; padding: 8px 12px; border-radius: 6px; margin: 0; }
 .presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .preset-name { max-width: 260px; min-height: 32px; }
+.footer { max-width: 1320px; margin: 0 auto; padding: 0 16px 28px; text-align: center; }
+.footer a { color: var(--muted); }
+.dev-licence { margin: 0; }

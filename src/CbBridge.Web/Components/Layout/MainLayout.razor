@@ -2,6 +2,7 @@
 @inject CodebeamerSession Session
 @inject NavigationManager Nav
 @inject IOptions<BrandingOptions> BrandingOptions
+@inject CbBridge.Core.Licensing.LicenceService Licence
 
 <header class="topbar">
     <div class="topbar-left">
@@ -35,8 +36,24 @@
 </header>
 
 <main class="page">
-    @Body
+    @if (!Licence.AllowsUse)
+    {
+        <LicenceLock />
+    }
+    else
+    {
+        @if (Licence.Check.State == CbBridge.Core.Licensing.LicenceState.ExpiringSoon)
+        {
+            <p class="warn">@Licence.Check.Message <a href="/licence">Licence</a></p>
+        }
+        else if (!Licence.Enforced && !Licence.Check.AllowsUse)
+        {
+            <p class="muted dev-licence">Development mode — licence not enforced (@Licence.Check.Message) <a href="/licence">Licence</a></p>
+        }
+        @Body
+    }
 </main>
+<footer class="footer muted">@BrandingOptions.Value.ProductName @Version · © 2026 Justard · <a href="/licence">@(Licence.Check.Grant is { } g ? $"Licensed to {g.Licensee}" : "Licence")</a></footer>
 
 <div id="blazor-error-ui">
     An unhandled error has occurred.
@@ -45,6 +62,8 @@
 </div>
 
 @code {
+    private static readonly string Version = typeof(MainLayout).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "";
+
     private void SignOut()
     {
         Session.SignOut();

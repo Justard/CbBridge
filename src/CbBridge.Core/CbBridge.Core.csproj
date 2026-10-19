@@ -9,6 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The licence public key (made with tools/LicenceTool keygen). Absent = builds are locked in production. -->
+    <EmbeddedResource Include="Licensing\licence-public-key.pem" LogicalName="CbBridge.licence-public-key.pem" Condition="Exists('Licensing\licence-public-key.pem')" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Brings HttpClientFactory, Options, Logging, Configuration — no NuGet packages needed. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

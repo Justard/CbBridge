@@ -12,3 +12,8 @@ __pycache__/
 /src/CbBridge.Web/data/
 /results/
 /data/
+
+# Licensing: never commit private keys or issued licence keys
+*private*.pem
+*.lic
+licence.key
