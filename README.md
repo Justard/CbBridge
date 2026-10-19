@@ -90,4 +90,5 @@ instance** — field names and the result upload format must be checked there fi
 ## Licence
 
 Proprietary — © 2026 Justard. All rights reserved. Using the software needs a licence key from the copyright
-holder; see [LICENSE](LICENSE) and [Licensing](docs/licensing.md). In Development mode the licence is not enforced.
+holder; see [LICENSE](LICENSE) and [Licensing](docs/licensing.md). Prerelease builds (the default while developing and
+testing) show the licence but never block; release builds from a version tag enforce it.

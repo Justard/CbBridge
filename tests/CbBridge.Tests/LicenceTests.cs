@@ -65,6 +65,16 @@ public static class LicenceTests
     }
 
     [Test]
+    public static void PrereleaseBuildNeverBlocks()
+    {
+        var prerelease = new LicenceService(new LicensingOptions { EnforceInDevelopment = true }, new Env("Production"), OwnerPublic, () => Now, enforcedBuild: false);
+        Assert.True(prerelease.AllowsUse, "no key, production, prerelease build");
+        Assert.Equal("prerelease build", prerelease.NotEnforcedReason);
+        Assert.Equal(LicenceState.Missing, prerelease.Check.State, "state still shown");
+        Assert.False(LicenceService.EnforcedBuild, "test build is a prerelease build");
+    }
+
+    [Test]
     public static void ExpiryTakesEffectWithoutRestart()
     {
         var clock = Now;

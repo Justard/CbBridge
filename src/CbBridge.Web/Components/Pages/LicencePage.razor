@@ -15,6 +15,10 @@
             <strong class="mono">@Licence.MachineName</strong> and install it below.</p>
     }
     <p class="@(check.AllowsUse ? "ok" : Licence.Enforced ? "error" : "warn")" role="status">@check.Message</p>
+    @if (Licence.IsPrerelease)
+    {
+        <p class="hint">This is a <strong>prerelease build</strong>: the licence is checked and shown, but never blocks. Release builds made from a version tag enforce it.</p>
+    }
     <dl class="facts">
         @if (check.Grant is { } g)
         {
@@ -25,7 +29,7 @@
             <dt>Machines</dt><dd class="mono">@(g.Hosts.Length == 0 ? "any" : string.Join(", ", g.Hosts))</dd>
         }
         <dt>This machine</dt><dd class="mono">@Licence.MachineName</dd>
-        <dt>Enforced</dt><dd>@(Licence.Enforced ? "yes" : "no — Development mode")</dd>
+        <dt>Enforced</dt><dd>@(Licence.Enforced ? "yes" : $"no — {Licence.NotEnforcedReason}")</dd>
     </dl>
 
     <h2>Install a licence key</h2>

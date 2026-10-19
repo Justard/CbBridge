@@ -4,11 +4,27 @@ CB Test Bridge is **proprietary**: all rights belong to the copyright holder (se
 needs a **licence key** issued by the copyright holder. This page is for the copyright holder (making keys) and for
 administrators (installing them).
 
+- [Prerelease and release builds](#prerelease-and-release-builds)
 - [How the lock works](#how-the-lock-works)
 - [One-time setup (copyright holder)](#one-time-setup-copyright-holder)
 - [Issuing a licence key](#issuing-a-licence-key)
 - [Installing a licence key (administrator)](#installing-a-licence-key-administrator)
 - [What the lock does and does not protect](#what-the-lock-does-and-does-not-protect)
+
+## Prerelease and release builds
+
+Whether the lock is enforced is decided **when the program is built**, not in its settings — so nobody who receives
+the program can switch it off in `appsettings.json`.
+
+| Build | Made by | Licence |
+|---|---|---|
+| **Prerelease** (default) | `dotnet build` / `dotnet run` / `dotnet publish` without extra options, every branch, the CI pipeline, tags like `v1.1.0-beta.1` | Checked and shown (licence page, footer "prerelease", a grey notice), **never blocks** |
+| **Release** | `dotnet publish -p:LicenceEnforced=true` — the release pipeline does this for tags like `v1.1.0` | **Enforced**: without a valid key only the licence page works |
+
+So while you are testing, nothing needs a key. When you hand out a release, it does. A release build also needs the
+public key in the source (see below) — the release pipeline refuses to build one without it.
+
+Prerelease builds are unlocked for anyone who runs them: hand out only release builds to others.
 
 ## How the lock works
 
@@ -16,7 +32,7 @@ administrators (installing them).
 |---|---|
 | Key pair | ECDSA P-256. The **private key** stays with the copyright holder, encrypted with a passphrase, never in the repository. The **public key** is built into the program. |
 | Licence key | `CBB1.<content>.<signature>` — licensee, ID, issue date, optional expiry, optional machine names, signed with the private key. Changing one character makes it invalid. |
-| Without a valid key | The bridge shows only the licence page. Console, history, CI API, `/api/v1`, `/mcp` and `/metrics` are refused (HTTP 402); test runs never start. `/health` keeps answering. |
+| Without a valid key (release build) | The bridge shows only the licence page. Console, history, CI API, `/api/v1`, `/mcp` and `/metrics` are refused (HTTP 402); test runs never start. `/health` keeps answering. |
 | Expiry | 30 days before, a yellow notice appears on every page. On the day, the bridge locks — without a restart. |
 | Machine binding | Optional: a key can name the machines (`Environment.MachineName`) it may run on. In Docker set a fixed `--hostname`. |
 | Development | When `ASPNETCORE_ENVIRONMENT=Development` the licence is shown but not enforced, so you can develop and test. `Licensing:EnforceInDevelopment=true` turns it on there too. |

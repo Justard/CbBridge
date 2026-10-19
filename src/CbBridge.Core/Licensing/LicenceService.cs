@@ -30,27 +30,45 @@ public sealed class LicenceService
     private readonly Func<DateTimeOffset> _clock;
     private string? _key;
 
+    /// <summary>True only in release builds (-p:LicenceEnforced=true); prerelease builds never block.</summary>
+    public static bool EnforcedBuild =>
+#if LICENCE_ENFORCED
+        true;
+#else
+        false;
+#endif
+
     public LicenceService(IOptions<LicensingOptions> options, IHostEnvironment env, ILogger<LicenceService> logger)
-        : this(options.Value, env, LoadEmbeddedPublicKey(), () => DateTimeOffset.UtcNow)
+        : this(options.Value, env, LoadEmbeddedPublicKey(), () => DateTimeOffset.UtcNow, EnforcedBuild)
     {
         var check = Check;
         if (check.AllowsUse) logger.LogInformation("Licence: {Message}", check.Message);
         else if (Enforced) logger.LogError("Licence: {Message} The bridge is locked until a valid licence key is installed.", check.Message);
-        else logger.LogWarning("Licence: {Message} (not enforced in {Environment})", check.Message, env.EnvironmentName);
+        else logger.LogWarning("Licence: {Message} (not enforced: {Reason})", check.Message, NotEnforcedReason);
     }
 
-    /// <summary>For tests: a given public key and clock.</summary>
-    public LicenceService(LicensingOptions options, IHostEnvironment env, ECDsa? publicKey, Func<DateTimeOffset> clock)
+    /// <summary>For tests: a given public key, clock and build kind.</summary>
+    public LicenceService(LicensingOptions options, IHostEnvironment env, ECDsa? publicKey, Func<DateTimeOffset> clock, bool enforcedBuild = true)
     {
         _options = options;
         _env = env;
         _publicKey = publicKey;
         _clock = clock;
+        _enforcedBuild = enforcedBuild;
         _key = ReadKey();
     }
 
-    /// <summary>False only in Development (unless EnforceInDevelopment): developers can work without a key.</summary>
-    public bool Enforced => !_env.IsDevelopment() || _options.EnforceInDevelopment;
+    private readonly bool _enforcedBuild;
+
+    /// <summary>Is the bridge locked without a valid key? Only in a release build, and there not in Development
+    /// mode (unless EnforceInDevelopment).</summary>
+    public bool Enforced => _enforcedBuild && (!_env.IsDevelopment() || _options.EnforceInDevelopment);
+
+    /// <summary>Why the licence is not enforced, or null when it is.</summary>
+    public string? NotEnforcedReason =>
+        !_enforcedBuild ? "prerelease build" : Enforced ? null : "Development mode";
+
+    public bool IsPrerelease => !_enforcedBuild;
 
     /// <summary>Evaluated on every call, so an expiry takes effect without a restart.</summary>
     public LicenceCheck Check => LicenceKey.Verify(_key, _publicKey, _clock(), Environment.MachineName);
