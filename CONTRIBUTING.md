@@ -75,6 +75,10 @@ git push -u origin feature/short-name
    a GitHub release `v1.1.0`.
 5. Merge `release/1.1.0` back into `develop` (pull request), then delete the release branch.
 
+**Test versions for others:** tag `v1.1.0-beta.1` (or `-rc.1`) instead. The pipeline makes a GitHub *pre-release*
+whose downloads show the licence but never block (see `docs/licensing.md`). Plain `vX.Y.Z` tags make release builds
+that enforce the licence.
+
 **Hotfix:** the same from `master`: `hotfix/1.1.1` → fix → version `1.1.1` → PR into `master` → tag `v1.1.1`
 → PR into `develop`.
 
