@@ -2,9 +2,10 @@
 # No NuGet packages are used, so restore needs nothing from the internet beyond the .NET SDK itself.
 name: ci
 
+# Gitflow: every push to the long-lived branches and to release/hotfix branches, and every pull request.
 on:
   push:
-    branches: [ main ]
+    branches: [ develop, master, main, "release/**", "hotfix/**" ]
   pull_request:
   workflow_dispatch:
 
