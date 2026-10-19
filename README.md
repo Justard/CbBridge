@@ -35,6 +35,7 @@ The product name, logo and colours are configurable, so any company can run it u
 | [API, events and metrics](docs/api.md) | Integrators | Keys and scopes, /api/v1, webhooks, /metrics, OpenAPI |
 | [MCP server](docs/mcp.md) | AI agent builders | The bridge's tools for AI assistants |
 | [Testing](docs/testing.md) | Developers | Unit tests, end-to-end test, framework contract check, GitHub Actions |
+| [Licensing](docs/licensing.md) | Copyright holder, admins | Licence keys: making, issuing, installing; what the lock protects |
 | [Architecture](docs/architecture.md) | Developers | Layers, data flow, extension points (e.g. Xray), design decisions |
 
 ## Quick start (local, with the built-in stand-ins)
@@ -85,3 +86,9 @@ CbBridge/
 Working model. 44 unit tests and an end-to-end smoke test run against the bundled stand-ins on every push; **not yet verified against a real ALM
 instance** — field names and the result upload format must be checked there first
 (see [Installation & configuration → Connecting a real codebeamer](docs/installation-and-configuration.md#connecting-a-real-codebeamer)).
+
+## Licence
+
+Proprietary — © 2026 Justard. All rights reserved. Using the software needs a licence key from the copyright
+holder; see [LICENSE](LICENSE) and [Licensing](docs/licensing.md). Prerelease builds (the default while developing and
+testing) show the licence but never block; release builds from a version tag enforce it.

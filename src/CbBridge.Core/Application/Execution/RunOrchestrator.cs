@@ -20,7 +20,8 @@ public sealed class RunOrchestrator(
     Events.RunEvents events,
     BenchRegistry benches,
     IOptions<AccessOptions> access,
-    BridgeMetrics metrics) : IDisposable
+    BridgeMetrics metrics,
+    Licensing.LicenceService licence) : IDisposable
 {
     public string FrameworkUrl => framework.BaseUrl;
 
@@ -45,6 +46,13 @@ public sealed class RunOrchestrator(
         CancellationToken abort,
         Results.RunRecord? record = null)
     {
+        if (!licence.AllowsUse)   // second line of defence — UI, CI, API and MCP already refuse
+        {
+            foreach (var r in board) { r.Verdict = Verdict.NotRun; r.Message = "no valid licence"; }
+            await log("not started: " + licence.Check.Message);
+            await changed();
+            return;
+        }
         var bench = framework.BaseUrl;
         benches.Begin(bench, session.User, record?.Source ?? "console", record?.Selection ?? $"{queue.Count} test(s)", queue.Count, record?.Id);
         metrics.RunStarted();

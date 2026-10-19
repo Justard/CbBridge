@@ -1,0 +1,46 @@
+CB Test Bridge — Proprietary Software Licence
+
+Copyright © 2026 Justard (https://github.com/Justard). All rights reserved.
+
+1. Ownership. This software, including its source code, object code, documentation, designs, interfaces,
+   contracts (framework, AI analysis, API and MCP descriptions) and all copies, is the exclusive property of the
+   copyright holder. It was created independently by the copyright holder.
+
+2. No licence by access. Being able to see, download or clone this repository, or having received a copy, does
+   not grant any right to use it. No right is granted by implication, estoppel or otherwise, except as written in
+   section 3.
+
+3. Permitted use. Running the software is permitted only
+   (a) by the copyright holder, or
+   (b) by a licensee holding a valid licence key issued by the copyright holder, within the scope, term and
+       installations named in that key and in any written agreement accompanying it.
+
+4. Restrictions. Without the copyright holder's prior written permission you may not:
+   (a) copy, modify, translate, adapt or create derivative works of the software or any part of it;
+   (b) distribute, publish, sublicense, sell, rent, lend, host for others or otherwise make it available;
+   (c) remove, disable or circumvent the licence check, or create, alter or share licence keys;
+   (d) reverse engineer, decompile or disassemble it, except where the law expressly allows this regardless of
+       this restriction;
+   (e) remove or change copyright or licence notices.
+
+5. Contributions. Changes submitted to this repository become the property of the copyright holder unless agreed
+   otherwise in writing.
+
+6. Termination. Any right to use the software ends automatically when these terms are breached or the licence key
+   expires. On termination all copies must be deleted.
+
+7. No warranty. The software is provided "as is", without warranty of any kind, express or implied, including
+   merchantability, fitness for a particular purpose and non-infringement. Test results, AI comments and any data
+   written to third-party systems must be checked by the user.
+
+8. Limitation of liability. To the extent permitted by law, the copyright holder is not liable for any damages
+   arising from the use of or inability to use the software. Liability for intent and gross negligence, and for
+   injury to life, body or health, remains unaffected.
+
+9. Third-party names. codebeamer, Jira, Xray, Jenkins and other product names belong to their owners. This
+   software is not affiliated with or endorsed by them.
+
+10. Governing law. German law applies, excluding its conflict-of-laws rules and the UN Convention on Contracts for
+    the International Sale of Goods.
+
+Licence enquiries: contact the copyright holder through https://github.com/Justard.

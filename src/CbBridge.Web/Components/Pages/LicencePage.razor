@@ -1,0 +1,65 @@
+@page "/licence"
+@using CbBridge.Core.Licensing
+@inject LicenceService Licence
+@inject IOptions<BrandingOptions> BrandingOptions
+@inject NavigationManager Nav
+
+<PageTitle>@BrandingOptions.Value.ProductName · Licence</PageTitle>
+
+<section class="card narrow">
+    <h1>@(Locked ? "Licence required" : "Licence")</h1>
+    @{ var check = Licence.Check; }
+    @if (Locked)
+    {
+        <p class="hint">This installation of CB Test Bridge is locked. Ask the copyright holder for a licence key for machine
+            <strong class="mono">@Licence.MachineName</strong> and install it below.</p>
+    }
+    <p class="@(check.AllowsUse ? "ok" : Licence.Enforced ? "error" : "warn")" role="status">@check.Message</p>
+    @if (Licence.IsPrerelease)
+    {
+        <p class="hint">This is a <strong>prerelease build</strong>: the licence is checked and shown, but never blocks. Release builds made from a version tag enforce it.</p>
+    }
+    <dl class="facts">
+        @if (check.Grant is { } g)
+        {
+            <dt>Licensee</dt><dd>@g.Licensee @(g.Email is null ? "" : $"· {g.Email}")</dd>
+            <dt>Licence ID</dt><dd class="mono">@g.Id</dd>
+            <dt>Issued</dt><dd>@g.IssuedAt.ToString("yyyy-MM-dd")</dd>
+            <dt>Valid until</dt><dd>@(g.ExpiresAt?.ToString("yyyy-MM-dd") ?? "no expiry")</dd>
+            <dt>Machines</dt><dd class="mono">@(g.Hosts.Length == 0 ? "any" : string.Join(", ", g.Hosts))</dd>
+        }
+        <dt>This machine</dt><dd class="mono">@Licence.MachineName</dd>
+        <dt>Enforced</dt><dd>@(Licence.Enforced ? "yes" : $"no — {Licence.NotEnforcedReason}")</dd>
+    </dl>
+
+    <h2>Install a licence key</h2>
+    <form class="stack" @onsubmit="Install">
+        <label>Licence key
+            <textarea class="mono" rows="4" @bind="_key" @bind:event="oninput" placeholder="CBB1.…"></textarea>
+        </label>
+        <button class="btn primary" type="submit" disabled="@string.IsNullOrWhiteSpace(_key)">Check and install</button>
+    </form>
+    @if (_result is not null)
+    {
+        <p class="@(_result.AllowsUse ? "ok" : "error")">@_result.Message @(_result.AllowsUse ? "Installed." : "Not installed.")</p>
+    }
+    <p class="hint">Keys are issued by the copyright holder only. CB Test Bridge is proprietary software — see LICENSE.</p>
+</section>
+
+@code {
+    /// <summary>Shown as the lock screen (instead of every page) rather than as its own page.</summary>
+    [Parameter] public bool Locked { get; set; }
+    private string _key = "";
+    private LicenceCheck? _result;
+
+    private void Install()
+    {
+        try { _result = Licence.Install(_key); }
+        catch (IOException ex) { _result = new LicenceCheck(LicenceState.Invalid, null, "Valid, but could not be saved: " + ex.Message); }
+        if (_result.AllowsUse)
+        {
+            _key = "";
+            if (Locked) Nav.NavigateTo("/", forceLoad: true);   // unlock: reload the app
+        }
+    }
+}

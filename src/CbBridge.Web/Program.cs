@@ -34,6 +34,9 @@ var app = builder.Build();
     }
 }
 
+// Licence state into the startup log (and locked state, if so)
+app.Services.GetRequiredService<CbBridge.Core.Licensing.LicenceService>();
+
 // API client configuration problems (unknown scope, missing key) → startup warnings
 foreach (var problem in app.Services.GetRequiredService<CbBridge.Core.Application.Api.ApiClientRegistry>().Problems())
     app.Logger.LogWarning("Api:Clients: {Problem}", problem);
@@ -50,6 +53,22 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
+
+// Licence lock for machine access: everything under /api, /mcp and /metrics answers 402 without a valid
+// licence (the UI shows the licence page instead). /health and the licence page stay reachable.
+app.Use(async (http, next) =>
+{
+    var path = http.Request.Path;
+    if ((path.StartsWithSegments("/api") || path.StartsWithSegments("/mcp") || path.StartsWithSegments("/metrics"))
+        && !path.StartsWithSegments("/api/openapi.json")
+        && http.RequestServices.GetRequiredService<CbBridge.Core.Licensing.LicenceService>() is { AllowsUse: false } licence)
+    {
+        http.Response.StatusCode = StatusCodes.Status402PaymentRequired;
+        await http.Response.WriteAsJsonAsync(new { status = 402, title = "Licence required", detail = licence.Check.Message });
+        return;
+    }
+    await next();
+});
 
 app.MapCiApi();   // Jenkins / CI — off unless Ci:Enabled
 app.MapAnalysisCallback();   // AI agent answers — off unless Analysis:Enabled

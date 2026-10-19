@@ -19,8 +19,9 @@ public static class HistoryApi
         var read = ApiAuth.Require(Scopes.HistoryRead, allowBearer: true);
 
         v1.MapGet("/status", (IResultRepository repo, IOptions<AnalysisOptions> analysis, IOptions<CbBridge.Core.Application.Ci.CiOptions> ci,
-            HttpContext http) => Results.Json(new
+            CbBridge.Core.Licensing.LicenceService licence, HttpContext http) => Results.Json(new
         {
+            licence = new { state = licence.Check.State.ToString(), licence.Check.Message, licensee = licence.Check.Grant?.Licensee, expiresAt = licence.Check.Grant?.ExpiresAt, enforced = licence.Enforced, prerelease = licence.IsPrerelease },
             client = http.Client()!.Name,
             scopes = http.Client()!.Scopes.OrderBy(s => s),
             version = typeof(HistoryApi).Assembly.GetName().Version?.ToString(),

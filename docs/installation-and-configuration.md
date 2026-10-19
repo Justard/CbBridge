@@ -328,6 +328,16 @@ see [API, events and metrics](api.md). MCP for AI agents: [MCP server](mcp.md).
 |---|---|---|
 | `PostBackUsers` | `[]` | codebeamer user names allowed to write to codebeamer (post results, create test runs, add comments). Empty = everyone who can sign in. Others can still run tests; their results stay in the bridge. **Include the CI agent's account** if CI should post. |
 
+### `Licensing`
+
+The bridge needs a licence key outside Development mode — see [Licensing](licensing.md#installing-a-licence-key-administrator).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Key` | *(empty)* | The licence key (or environment variable `Licensing__Key`) |
+| `File` | `licence.key` | File holding the key, relative to the app folder |
+| `EnforceInDevelopment` | `false` | Enforce the licence also in Development |
+
 ### `Analysis`
 
 Optional AI analysis of failed tests. See [AI analysis](ai-analysis.md) for the agent contract.
