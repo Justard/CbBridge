@@ -1,0 +1,62 @@
+# A tag on master builds a release: tests, ready-to-run downloads, GitHub release.
+#   vX.Y.Z        release build — licence enforced
+#   vX.Y.Z-beta.N prerelease build — licence shown, never blocks; marked "Pre-release" on GitHub
+name: release
+
+on:
+  push:
+    tags: [ "v*.*.*" ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Tag must be on master
+        run: |
+          git fetch origin master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master || { echo "Tag $GITHUB_REF_NAME is not on master"; exit 1; }
+
+      - name: Version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # v1.2.0 = release (licence enforced) · v1.2.0-beta.1 = prerelease (licence shown, never blocks)
+          if [[ "$VERSION" == *-* ]]; then echo "ENFORCED=false" >> "$GITHUB_ENV"; else echo "ENFORCED=true" >> "$GITHUB_ENV"; fi
+
+      - name: Release builds need the licence public key
+        if: env.ENFORCED == 'true'
+        run: |
+          test -f src/CbBridge.Core/Licensing/licence-public-key.pem || {
+            echo "No licence public key in the source: a release build would be locked for everyone."
+            echo "Run 'dotnet run --project tools/LicenceTool -- keygen' on your PC and commit the public key (docs/licensing.md)."
+            exit 1; }
+
+      - name: Build and test
+        run: |
+          dotnet build CbBridge.sln -c Release -p:Version=$VERSION -p:LicenceEnforced=$ENFORCED
+          if [ -d tests/CbBridge.Tests ]; then dotnet run -c Release --no-build --project tests/CbBridge.Tests; fi
+
+      - name: Publish (needs the .NET 8 ASP.NET Core runtime on the server)
+        run: |
+          for rid in win-x64 linux-x64; do
+            dotnet publish src/CbBridge.Web -c Release -r $rid --self-contained false -p:Version=$VERSION -p:LicenceEnforced=$ENFORCED -o out/$rid
+            (cd out/$rid && zip -qr ../../cb-test-bridge-$VERSION-$rid.zip .)
+          done
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=$([ "$ENFORCED" = "true" ] || echo "--prerelease")
+          gh release create "$GITHUB_REF_NAME" cb-test-bridge-$VERSION-*.zip \
+            --title "CB Test Bridge $VERSION" --generate-notes --verify-tag $PRE
