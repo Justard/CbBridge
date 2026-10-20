@@ -92,6 +92,7 @@ def main():
     ap.add_argument("--codebeamer-url", help="codebeamer address (default: bridge setting)")
     ap.add_argument("--no-new-runs", action="store_true", help="do not create a new codebeamer test run per test case")
     ap.add_argument("--no-post-back", action="store_true", help="do not write results to codebeamer")
+    ap.add_argument("--analyze", action="store_true", help="send failed tests to the AI agent (needs Analysis:Enabled on the bridge)")
     ap.add_argument("--time-limit", type=int, help="seconds per test")
     ap.add_argument("--overall-limit", type=int, help="seconds for the whole run")
     ap.add_argument("--label", default=os.environ.get("BUILD_TAG"), help="shown in the bridge log (default: Jenkins BUILD_TAG)")
@@ -112,7 +113,7 @@ def main():
         "category": args.category, "testablauf": args.testablauf, "testRun": args.test_run, "testCase": args.test_case,
         "onlyTestCases": split_list(args.only), "release": args.release, "versions": split_list(args.versions),
         "frameworkUrl": args.framework_url, "codebeamerUrl": args.codebeamer_url,
-        "createNewRuns": not args.no_new_runs, "postBack": not args.no_post_back,
+        "createNewRuns": not args.no_new_runs, "postBack": not args.no_post_back, "analyze": args.analyze,
         "timeLimitSec": args.time_limit, "overallLimitSec": args.overall_limit, "label": args.label,
     }
     request = {k: v for k, v in request.items() if v is not None}

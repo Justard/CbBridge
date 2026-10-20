@@ -17,6 +17,9 @@ public sealed class CiOptions
 
     public int DefaultTimeLimitSec { get; set; } = 120;
     public int DefaultOverallLimitSec { get; set; } = 3600;
+
+    /// <summary>AI analysis: after the last test, the job waits this long for open analyses (for the JUnit report).</summary>
+    public int AnalysisWaitSec { get; set; } = 300;
 }
 
 /// <summary>What Jenkins asks for. Exactly one of Category / Testablauf / TestRun / TestCase (ID or link).</summary>
@@ -42,6 +45,9 @@ public sealed class CiRunRequest
 
     public bool CreateNewRuns { get; set; } = true;
     public bool PostBack { get; set; } = true;
+
+    /// <summary>Send failed tests to the AI agent (needs Analysis:Enabled on the bridge).</summary>
+    public bool Analyze { get; set; }
 
     /// <summary>Test system (framework address); default Framework:BaseUrl.</summary>
     public string? FrameworkUrl { get; set; }
@@ -76,6 +82,10 @@ public sealed class CiJob
     public required string FrameworkUrl { get; init; }
     public string? Label { get; init; }
     public string RequestedBy { get; init; } = "";
+    /// <summary>The run's ID in the history (/history/{RunId}, /api/v1/runs/{RunId}).</summary>
+    public string? RunId { get; set; }
+    /// <summary>Which API client started it.</summary>
+    public string? Client { get; set; }
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
@@ -108,14 +118,14 @@ public sealed record CiJobView(
     [property: JsonConverter(typeof(JsonStringEnumConverter))] CiJobState State,
     string Kind, string Target, string FrameworkUrl, string? Label,
     DateTimeOffset CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt,
-    string? Error, CiSummary Summary, List<CiResultView> Results, int LogFrom, List<string> Log)
+    string? Error, CiSummary Summary, List<CiResultView> Results, int LogFrom, List<string> Log, string? RunId)
 {
     public static CiJobView From(CiJob job, int logFrom = 0)
     {
         var results = job.Results.ToList().Select(CiResultView.From).ToList();
         return new CiJobView(job.Id, job.State, job.Kind, job.Target, job.FrameworkUrl, job.Label,
             job.CreatedAt, job.StartedAt, job.FinishedAt, job.Error, CiSummary.From(job.Results.ToList()),
-            results, logFrom, job.LogSnapshot(logFrom));
+            results, logFrom, job.LogSnapshot(logFrom), job.RunId);
     }
 }
 
@@ -134,9 +144,10 @@ public sealed record CiSummary(int Total, int Passed, int Failed, int Blocked, i
 }
 
 public sealed record CiResultView(string ItemId, string? TestCaseId, string Name, string Verdict, double DurationSec,
-    string Message, string? PostedTo, string Upload)
+    string Message, string? PostedTo, string Upload, string? Analysis, string? AnalysisComment)
 {
     public static CiResultView From(ExecutionResult r) => new(
         r.ItemId, r.TestCaseId, r.Name, r.Verdict.ToString().ToUpperInvariant(), Math.Round(r.Duration.TotalSeconds, 2),
-        r.Message, r.PostTargetId, r.Posted.ToString());
+        r.Message, r.PostTargetId, r.Posted.ToString(),
+        r.AnalysisState == AnalysisState.None ? null : r.AnalysisState.ToString(), r.AnalysisComment);
 }

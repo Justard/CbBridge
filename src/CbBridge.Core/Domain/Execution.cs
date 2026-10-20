@@ -4,6 +4,9 @@ public enum Verdict { Queued, Running, Passed, Failed, Blocked, Timeout, Aborted
 
 public enum PostState { NotPosted, Posted, DryRun, Failed }
 
+/// <summary>AI analysis of a failed test: none, asked and waiting, answered, or no usable answer.</summary>
+public enum AnalysisState { None, Pending, Done, NoAnswer, Failed }
+
 /// <summary>Result of one test run as the bridge sees it (framework JSON + bridge-side outcome).</summary>
 public sealed class ExecutionResult
 {
@@ -35,6 +38,26 @@ public sealed class ExecutionResult
     public string? PostTargetId { get; set; }
 
     /// <summary>Only real outcomes with a target test run are posted; aborted / not-run / errors / local tests are not.</summary>
+    /// <summary>Live progress while running (contract 1.1): steps finished, total, last finished step.</summary>
+    public int StepsDone { get; set; }
+    public int? StepsTotal { get; set; }
+    public string? LastStep { get; set; }
+
+    /// <summary>AI analysis wanted for this test if it fails (from the per-test checkbox).</summary>
+    public bool Analyze { get; set; }
+    public AnalysisState AnalysisState { get; set; }
+    /// <summary>The agent's short comment for developers (null until it answers).</summary>
+    public string? AnalysisComment { get; set; }
+    /// <summary>The agent's full answer as JSON (likely cause, confidence, … — whatever the agent sends).</summary>
+    public string? AnalysisRawJson { get; set; }
+    /// <summary>Where the comment went in codebeamer, or why it did not.</summary>
+    public PostState AnalysisPosted { get; set; }
+    public string? AnalysisPostMessage { get; set; }
+
+    private int _commentClaimed;
+    /// <summary>True exactly once: whoever gets true posts the comment (live arrival vs. later upload race).</summary>
+    public bool ClaimCommentPost() => Interlocked.Exchange(ref _commentClaimed, 1) == 0;
+
     public bool CanPost => !IsLocal && PostTargetId is not null
                            && Verdict is Verdict.Passed or Verdict.Failed or Verdict.Blocked or Verdict.Timeout;
 
@@ -47,6 +70,7 @@ public sealed class ExecutionResult
         IsLocal = p.IsLocal,
         TestCaseId = p.SourceTestCaseId,
         GroupName = p.GroupName,
+        Analyze = p.Analyze,
         PostTargetId = p.IsLocal || p.SourceTestCaseId is not null ? null : p.ItemId
     };
 
@@ -69,6 +93,9 @@ public sealed class RunOptions
 
     /// <summary>Run multiple: create a new codebeamer test run for each test case just before it runs.</summary>
     public bool CreateNewRuns { get; set; } = true;
+
+    /// <summary>AI analysis: failed tests (with their checkbox on) are sent to the analysis agent.</summary>
+    public bool Analyze { get; set; }
 
     public RunOptions Clone() => (RunOptions)MemberwiseClone();
 }

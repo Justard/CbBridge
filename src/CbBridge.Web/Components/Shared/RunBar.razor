@@ -1,0 +1,19 @@
+@using CbBridge.Core.Application.History
+@* Small summary of one run: coloured bar plus counts. *@
+<div class="runbar-wrap" title="@Title">
+    <div class="runbar" aria-hidden="true">
+        @foreach (var (count, css) in Parts)
+        {
+            @if (count > 0) { <span class="@css" style="flex:@count"></span> }
+        }
+    </div>
+    <span class="mono small">@Run.Passed/@Run.Total passed@(Run.Problems > 0 ? $" · {Run.Problems} problem(s)" : "")@(Run.IsFinished ? "" : " · running")</span>
+</div>
+@code {
+    [Parameter, EditorRequired] public RunSummary Run { get; set; } = default!;
+    private (int, string)[] Parts => new[]
+    {
+        (Run.Passed, "rb-pass"), (Run.Failed + Run.Error, "rb-fail"), (Run.Timeout + Run.Blocked, "rb-warn"), (Run.NotRun, "rb-none")
+    };
+    private string Title => $"passed {Run.Passed} · failed {Run.Failed} · timeout {Run.Timeout} · blocked {Run.Blocked} · error {Run.Error} · not run {Run.NotRun}";
+}

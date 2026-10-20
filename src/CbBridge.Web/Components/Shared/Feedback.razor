@@ -1,0 +1,20 @@
+@using CbBridge.Core.Application.History
+@inject IResultRepository Repo
+@inject CodebeamerSession Session
+@* Was the AI comment useful? Stored per result; used to judge the agent. *@
+<span class="feedback">
+    <button class="btn icon small @(Result.Feedback == 1 ? "on" : "")" title="Helpful" aria-label="Helpful" @onclick="() => SetAsync(1)">👍</button>
+    <button class="btn icon small @(Result.Feedback == -1 ? "on" : "")" title="Not helpful" aria-label="Not helpful" @onclick="() => SetAsync(-1)">👎</button>
+    @if (Result.Feedback is not null) { <small class="muted">by @Result.FeedbackBy</small> }
+</span>
+@code {
+    [Parameter, EditorRequired] public StoredResult Result { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task SetAsync(int value)
+    {
+        var newValue = Result.Feedback == value ? (int?)null : value;   // click again = undo
+        Repo.SetFeedback(Result.RunId, Result.Position, newValue, Session.User, null);
+        await OnChanged.InvokeAsync();
+    }
+}

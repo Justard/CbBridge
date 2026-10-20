@@ -5,4 +5,10 @@ obj/
 __pycache__/
 *.pyc
 .venv/
-results/
+
+# Runtime output of the bridge — anchored to the app folder on purpose: on Windows git ignores case, and a bare
+# "results/" also matched the source folder src/CbBridge.Core/Application/Results/.
+/src/CbBridge.Web/results/
+/src/CbBridge.Web/data/
+/results/
+/data/

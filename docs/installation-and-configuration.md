@@ -148,31 +148,27 @@ The service user has a home folder (`/var/lib/cbbridge`), so the encryption keys
 
 **With Docker**
 
-```dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY publish/ .
-ENV ASPNETCORE_URLS=http://+:8080
-EXPOSE 8080
-USER $APP_UID
-ENTRYPOINT ["dotnet", "CbBridge.Web.dll"]
-```
+The repository has a `Dockerfile` (multi-stage: builds inside the SDK image, runs on the ASP.NET image with
+`libsqlite3-0` added for the run history, as the non-root `app` user). The pipeline builds it and checks it starts.
 
 ```bash
 docker build -t cbbridge .
 docker run -d --name cbbridge -p 8080:8080 \
   -v cbbridge-keys:/home/app/.aspnet/DataProtection-Keys \
+  -v cbbridge-data:/app/data \
+  -v cbbridge-results:/app/results \
   -v "$PWD/branding:/app/wwwroot/branding:ro" \
+  -e Bridge__PublicUrl="https://bridge.example.com" \
   -e Branding__CompanyName="Your Company" \
-  -e Branding__LogoUrl="branding/logo.svg" \
   cbbridge
 ```
 
 - The **`cbbridge-keys` volume is important**: without it, every container restart creates new keys and users'
-  saved tests and test systems are lost.
-- Add a volume for results too, e.g. `-v cbbridge-results:/app/results`, or they are lost with the container.
+  saved tests, test systems and presets are lost.
+- **`cbbridge-data`** holds the run history database, **`cbbridge-results`** the result files — without volumes
+  both are lost with the container.
 - The **branding folder** is mounted from the host, so a new logo needs no new image.
-- `USER $APP_UID` runs the app as the non-root `app` user that the official .NET 8 images provide.
+- Liveness probe: `GET /health`.
 
 **Framework stand-in on Linux:** `python3 framework_stub/app.py --host 0.0.0.0 --port 5001`, or
 `./run-stubs.sh` to start it together with the fake codebeamer.
@@ -240,6 +236,11 @@ Paths: a dot means nested (`parent.name`), a comma means *try these in order* (`
 | `GraceSeconds` | `15` | Extra wait beyond `timeLimitSec` before the bridge gives up and cancels |
 | `VerdictFields` | `verdict,result,status` | Where the verdict is in the framework's answer |
 | `MessageFields` | `message,error` | Where a message is in the framework's answer |
+| `Benches` | `[]` | Known test systems `[{ "Name": "Bench A", "Url": "http://10.0.0.12:5001" }]`, listed on the *Benches* page |
+| `ProgressPath` | `/progress/{itemId}` | Contract 1.1: live step progress (optional for the framework) |
+| `ProgressPollSeconds` | `1` | How often progress is asked for while a test runs; `0` = never |
+| `AttachmentsField` | `attachments` | Contract 1.1: files in the answer that go to the codebeamer test run |
+| `MaxAttachmentMb` | `20` | Larger files are skipped (logged) |
 
 ### `RunMultiple`
 
@@ -262,6 +263,7 @@ See [CI / Jenkins](ci-jenkins.md).
 | `KeepJobs` | `100` | Finished jobs kept in memory for status and JUnit download. |
 | `DefaultTimeLimitSec` | `120` | Per test, when the request gives none. |
 | `DefaultOverallLimitSec` | `3600` | Whole job, when the request gives none. |
+| `AnalysisWaitSec` | `300` | With AI analysis: how long a job waits for open analyses after its last test. |
 
 ### `Results`
 
@@ -289,6 +291,61 @@ files) and updated when results are uploaded later. A disk problem is logged and
 | Key | Default | Meaning |
 |---|---|---|
 | `DryRun` | `true` (`false` in Development) | `true` = log uploads instead of sending them |
+
+### `Database`
+
+Run history: every run, result, AI comment and codebeamer write, for the *History*, *Audit* and *Benches* pages,
+the API and the MCP tools. A single SQLite file, read through the **SQLite library the operating system already
+has** — `winsqlite3.dll` on Windows 10/11 and Server 2016+, `libsqlite3.so.0` on Linux, the system library on macOS.
+No package to install.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Enabled` | `true` | `false` = no history (result files are still written) |
+| `Path` | `data/cbbridge.db` | Relative to the app folder, or absolute. Back up this file (and the `-wal` file next to it) |
+| `SqliteLibrary` | *(empty)* | A specific SQLite library file, if the system one is missing |
+| `KeepDays` | `365` | Runs older than this are deleted at startup; `0` = keep forever |
+
+If the library is missing, the startup log says *Run history is not available* with the reason, the pages show it,
+and runs work as before. On minimal Linux images install it: `apt-get install libsqlite3-0` (Debian/Ubuntu) or
+`dnf install sqlite-libs`. The schema is created and upgraded automatically.
+
+### `Bridge`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `PublicUrl` | *(empty)* | Address people and systems use, e.g. `https://bridge.example.com` — for links in events, the API and MCP answers, and as the AI callback address |
+| `MetricsPublic` | `false` | `true` = `/metrics` without an API key |
+
+### `Api`, `Events`
+
+Keys and scopes for every client (Jenkins, n8n, dashboards, AI agents), and webhooks to other systems:
+see [API, events and metrics](api.md). MCP for AI agents: [MCP server](mcp.md).
+
+### `Access`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `PostBackUsers` | `[]` | codebeamer user names allowed to write to codebeamer (post results, create test runs, add comments). Empty = everyone who can sign in. Others can still run tests; their results stay in the bridge. **Include the CI agent's account** if CI should post. |
+
+### `Analysis`
+
+Optional AI analysis of failed tests. See [AI analysis](ai-analysis.md) for the agent contract.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Enabled` | `false` | Off until an admin switches it on — test data is sent to the agent. |
+| `WebhookUrl` | *(empty)* | The agent's webhook (n8n, Zapier, Make, own service). |
+| `AuthHeader`, `AuthValue` | `Authorization`, *(empty)* | Header the bridge sends to the agent. Set the value via environment variable `Analysis__AuthValue`. |
+| `CallbackBaseUrl` | *(empty)* | Public address of the bridge, for agents that answer later. Empty = the agent must answer in its webhook response. |
+| `Verdicts` | `FAILED, TIMEOUT, ERROR` | Which results are analysed. |
+| `RequestTimeoutSec` / `CallbackWaitSec` | `90` / `900` | How long the webhook call may take / how long a callback is awaited. |
+| `CommentFields` | `comment,summary,output,text` | Where the comment is in the agent's answer. |
+| `Language`, `MaxWords` | `en`, `80` | Hints passed to the agent. |
+| `MaxFrameworkChars` | `20000` | The framework answer is cut to this length before sending. |
+| `PostComment` | `true` | Add the comment to the codebeamer test run (only when results are posted there). |
+| `CommentPath` | `/items/{itemId}/comments` | Swagger v3 path for comments — **check against your instance**. |
+| `CommentPrefix` | `AI analysis (automatic, please verify):` | First line of the codebeamer comment. |
 
 ## Connecting a real codebeamer
 
@@ -326,6 +383,11 @@ To accept calls from the bridge server, the framework must listen on a reachable
   the server user's profile; if they change (new server, cleared profile), saved items can no longer be read and are
   ignored — nothing breaks.
 - **Branding colours** are validated as `#RRGGBB`; anything else falls back to the default (no CSS injection).
+- **API keys** are per client with scopes; store only their SHA-256 or set them by environment variable
+  ([API](api.md#keys-and-scopes)). The API, MCP endpoint and AI callback are off by default.
+- **Audit log:** every write to codebeamer — who, what, target, outcome — is kept in the run history (*Audit* page,
+  `GET /api/v1/audit`).
+- **Events** can be signed (HMAC-SHA256) so receivers can check they came from the bridge.
 - The **framework API has no authentication** in the reference stand-in. Keep test benches on a trusted network,
   or add authentication in your framework and the client (`FlaskFrameworkClient`).
 

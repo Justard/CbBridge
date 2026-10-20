@@ -1,0 +1,2 @@
+<span class="badge v-@Verdict.Replace(" ", "").ToLowerInvariant()">@(Verdict == "NOTRUN" ? "NOT RUN" : Verdict)</span>
+@code { [Parameter, EditorRequired] public string Verdict { get; set; } = ""; }

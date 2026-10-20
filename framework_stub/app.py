@@ -2,7 +2,8 @@
 Flask entry point — mirrors your framework's REST API.
     POST /execute            one test run JSON in, result JSON out (always 200 once it ran)
     POST /cancel/<itemId>    stop a running test run
-    GET  /health
+    GET  /progress/<itemId>  live step progress of a running test run (contract 1.1, optional)
+    GET  /health             status + contract version + capabilities
 """
 from flask import Flask, jsonify, request
 
@@ -12,9 +13,21 @@ app = Flask(__name__)
 REQUIRED = ("itemId", "name")
 
 
+CONTRACT = "1.1"
+
+
 @app.get("/health")
 def health():
-    return jsonify(status="ok")
+    # contract: which version of docs/framework-contract.md this framework implements;
+    # capabilities: optional parts it supports, so the bridge only uses what is there.
+    return jsonify(status="ok", contract=CONTRACT, framework="framework_stub 1.1",
+                   capabilities=["cancel", "progress", "attachments"])
+
+
+@app.get("/progress/<item_id>")
+def progress(item_id):
+    p = runner.progress(item_id)
+    return (jsonify(p), 200) if p else (jsonify(running=False), 404)
 
 
 @app.post("/execute")

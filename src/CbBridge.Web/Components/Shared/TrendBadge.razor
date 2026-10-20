@@ -1,0 +1,5 @@
+@if (Trend is not null)
+{
+    <span class="badge @(Trend == "FIXED" ? "trend-fixed" : "trend-new")" title="Compared with the same test's previous run">@Trend</span>
+}
+@code { [Parameter] public string? Trend { get; set; } }

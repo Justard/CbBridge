@@ -12,6 +12,7 @@ Demo switches (put them in "parameters"):
     simulateFailAtStep  step number that fails
     simulateHangSec     hang this long in step 1 (to see the time limit work)
 """
+import base64
 import time
 
 
@@ -67,7 +68,15 @@ def execute(testrun, report_step=lambda step: None):
             if critical:  # a failed critical step stops the test; others continue
                 break
 
+    attachments = []
+    if verdict != "PASSED":
+        # contract 1.1: files for the codebeamer test run (logs, traces, screenshots), base64, small
+        log = "\n".join(f"step {r['index']}: {r['action']} -> {r['verdict']} ({r['actual']})" for r in results)
+        attachments.append({"name": f"bench-log-{testrun.get('itemId')}.txt", "contentType": "text/plain",
+                            "contentBase64": base64.b64encode(log.encode()).decode()})
+
     return {
+        "attachments": attachments,
         "itemId": testrun.get("itemId"),
         "name": testrun.get("name"),
         # echo what the test ran against (interface / firmware / release), so results are traceable

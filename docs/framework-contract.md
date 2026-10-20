@@ -9,6 +9,8 @@ What a test framework must offer so the bridge can run tests on it. Any language
 - [Time limits](#time-limits)
 - [POST /cancel/{itemId}](#post-cancelitemid)
 - [GET /health](#get-health)
+- [Contract 1.1: progress and attachments](#contract-11-progress-and-attachments)
+- [Check your framework](#check-your-framework)
 - [Developer command line](#developer-command-line)
 - [Implementing it in your framework](#implementing-it-in-your-framework)
 
@@ -20,7 +22,8 @@ What a test framework must offer so the bridge can run tests on it. Any language
 |---|---|---|
 | `POST /execute` | yes | Run **one** test run, answer with its result |
 | `POST /cancel/{itemId}` | yes | Stop the test run that is currently running for `itemId` |
-| `GET /health` | no | Lets users check the connection (a 404 still counts as "reachable") |
+| `GET /health` | no | Lets users check the connection (a 404 still counts as "reachable"); reports the contract version |
+| `GET /progress/{itemId}` | no (1.1) | Live step progress of the running test |
 
 Paths are configurable on the bridge (`Framework:ExecutePath`, `CancelPath`, `HealthPath`).
 The bridge sends test runs **one at a time** and waits for each answer.
@@ -88,6 +91,7 @@ Use 4xx only when the request itself is unusable (e.g. 400 missing fields, 409 a
 | `verdict` | yes | `PASSED`, `FAILED`, `BLOCKED`, `TIMEOUT`, `ABORTED` or `ERROR` (also accepted: `PASS`, `OK`, `FAIL`, `TIMED_OUT`, `CANCELLED`). Field name configurable: `Framework:VerdictFields`. |
 | `message` | no | Short reason shown in the results table. Configurable: `Framework:MessageFields`. |
 | `durationSec` | no | Shown as the duration; otherwise the bridge measures it. |
+| `attachments` | no (1.1) | Files for the codebeamer test run — see [attachments](#attachments). |
 | anything else | no | Shown in full under **JSON** in the results table and attached to the codebeamer upload. |
 
 **Critical steps:** the reference implementation stops at the first failed step marked *critical* and continues
@@ -135,6 +139,61 @@ Stop the running test run with this `itemId`. Used for the **Abort** button and 
 ## GET /health
 
 Any 2xx means healthy. Optional — without it, *Test connection* reports "reachable (no /health route)".
+
+Recommended answer — tells the bridge which contract version you implement and which optional parts you support:
+
+```json
+{ "status": "ok", "contract": "1.1", "framework": "my-framework 4.2", "capabilities": ["cancel", "progress", "attachments"] }
+```
+
+*Test connection* and the *Benches* page show it (e.g. "contract 1.1 · cancel, progress, attachments"). Without
+`contract`, the bridge assumes 1.0.
+
+## Contract 1.1: progress and attachments
+
+Both are optional and backwards compatible: a 1.0 framework keeps working unchanged.
+
+### Progress
+
+While `/execute` is running, the bridge asks `GET /progress/{itemId}` every second
+(`Framework:ProgressPollSeconds`) and shows a progress bar with the last finished step in the results table.
+
+```json
+{ "itemId": "88132", "running": true, "stepsDone": 1, "stepsTotal": 3,
+  "lastStep": { "index": 1, "action": "Enable pairing", "verdict": "PASSED" }, "elapsedSec": 2.5 }
+```
+
+- `404 {"running": false}` when nothing is running under that ID (yet, or any more).
+- A plain 404/405 without that body tells the bridge the route doesn't exist; it stops asking that framework.
+- `lastStep` may be an object (shown as "action → verdict") or a text.
+
+### Attachments
+
+Files the test produced (logs, traces, screenshots, measurement data) can come with the result:
+
+```json
+"attachments": [
+  { "name": "bench-log-88132.txt", "contentType": "text/plain", "contentBase64": "c3RlcCAxOi..." }
+]
+```
+
+When the result is posted to codebeamer, each file is uploaded to the test run (`POST /api/v3/items/{id}/attachments`
+— check this against your instance) and recorded in the audit log. Files over `Framework:MaxAttachmentMb` (20 MB)
+are skipped with a log line. They are part of the stored framework answer, so keep them reasonably small.
+
+## Check your framework
+
+`tools/framework_check/check_framework.py` (Python 3.8+, no packages) checks a framework against this contract:
+`/health` and contract version, a quick test, error answers, and with `--slow` also the time limit (`TIMEOUT`),
+`/cancel` (`ABORTED`) and `/progress`.
+
+```bash
+python tools/framework_check/check_framework.py --url http://bench-a:5001
+python tools/framework_check/check_framework.py --url http://bench-a:5001 --test quick.json --slow slow.json
+```
+
+`--slow` needs a test of yours that runs 20 s or more; `slow-test.example.json` is one for `framework_stub`.
+Exit code 0 = no failures — usable in the framework's own CI.
 
 ## Developer command line
 

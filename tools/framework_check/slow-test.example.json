@@ -1,0 +1,8 @@
+{
+  "itemId": "contract-check-slow",
+  "name": "Contract check (slow)",
+  "description": "framework_stub: the first step hangs for 40 s",
+  "testRunSteps": [["_WAIT()", "PASSED", true], ["_WAIT()", "PASSED", true]],
+  "parameters": { "simulateHangSec": 40, "stepDelaySec": 0.5 },
+  "testConfiguration": "contract-check"
+}

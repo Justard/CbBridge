@@ -35,10 +35,13 @@ public static class JUnitReport
                 case Verdict.Timeout:
                 case Verdict.Blocked:
                     testcase.Add(new XElement("failure", new XAttribute("type", r.Verdict.ToString().ToUpperInvariant()),
-                        new XAttribute("message", r.Message), r.RawJson ?? r.Message));
+                        new XAttribute("message", r.AnalysisComment is null ? r.Message : $"{r.Message} · AI: {r.AnalysisComment}"),
+                        r.RawJson ?? r.Message));
                     break;
                 case Verdict.Error:
-                    testcase.Add(new XElement("error", new XAttribute("message", r.Message), r.RawJson ?? r.Message));
+                    testcase.Add(new XElement("error",
+                        new XAttribute("message", r.AnalysisComment is null ? r.Message : $"{r.Message} · AI: {r.AnalysisComment}"),
+                        r.RawJson ?? r.Message));
                     break;
                 case Verdict.NotRun:
                 case Verdict.Aborted:
@@ -51,6 +54,8 @@ public static class JUnitReport
             if (r.TestCaseId is not null) info.Add($"test case #{r.TestCaseId}");
             if (r.PostTargetId is not null) info.Add($"codebeamer test run #{r.PostTargetId}");
             if (r.PostMessage is not null) info.Add($"upload: {r.PostMessage}");
+            if (r.AnalysisComment is not null) info.Add($"AI analysis: {r.AnalysisComment}");
+            else if (r.AnalysisState is not (AnalysisState.None or AnalysisState.Done)) info.Add($"AI analysis: {r.AnalysisState}");
             if (info.Count > 0) testcase.Add(new XElement("system-out", string.Join("\n", info)));
             suite.Add(testcase);
         }

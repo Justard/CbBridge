@@ -1,0 +1,74 @@
+@page "/audit"
+@using CbBridge.Core.Application.History
+@inject CodebeamerSession Session
+@inject IResultRepository Repo
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<PageTitle>@BrandingOptions.Value.ProductName · Audit log</PageTitle>
+
+@if (!Session.IsSignedIn)
+{
+    <SignInNotice />
+}
+else
+{
+    <section class="card">
+        <div class="section-head">
+            <h1>Audit log</h1>
+            <span class="hint">Every write to codebeamer: results, new test runs, AI comments — who, when, outcome</span>
+        </div>
+        @if (!Repo.Available)
+        {
+            <p class="error">Not available: @Repo.Status</p>
+        }
+        else
+        {
+            <form class="row-wrap" @onsubmit="Load">
+                <label class="grow">Target (e.g. item:88132 or tc:10232)
+                    <input class="mono" @bind="_target" placeholder="all" />
+                </label>
+                <button class="btn primary" type="submit">Filter</button>
+            </form>
+            @if (_entries.Count == 0)
+            {
+                <p class="empty">Nothing recorded yet.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Outcome</th><th>Detail</th></tr></thead>
+                        <tbody>
+                            @foreach (var e in _entries)
+                            {
+                                <tr>
+                                    <td class="mono small">@e.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td>@e.Actor</td>
+                                    <td>@e.Action</td>
+                                    <td class="mono"><button class="linkish" @onclick="() => Filter(e.Target)">@e.Target</button></td>
+                                    <td><span class="badge @(e.Outcome == "Posted" ? "v-passed" : e.Outcome == "Failed" ? "v-failed" : "")">@e.Outcome</span></td>
+                                    <td class="msg mono small">@e.Detail</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </section>
+}
+
+@code {
+    private string _target = "";
+    private IReadOnlyList<AuditEntry> _entries = Array.Empty<AuditEntry>();
+
+    protected override void OnInitialized() => Load();
+
+    private void Filter(string target) { _target = target; Load(); }
+
+    private void Load()
+    {
+        if (!Session.IsSignedIn || !Repo.Available) return;
+        _entries = Repo.AuditLog(500, string.IsNullOrWhiteSpace(_target) ? null : _target.Trim());
+    }
+}

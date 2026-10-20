@@ -26,11 +26,15 @@ public sealed class PayloadRow
     {
         Original = original;
         StepsAsGrid = IsGridShape(original.TestRunSteps);
+        Analyze = original.Analyze;
         Reset();
     }
 
     public TestRunPayload Original { get; }
     public bool Include { get; set; } = true;
+
+    /// <summary>AI analysis if this test fails (only used when the run-level switch is on).</summary>
+    public bool Analyze { get; set; } = true;
 
     /// <summary>UI only: editor open (true) or folded to its header line (false).</summary>
     public bool Expanded { get; set; } = true;
@@ -136,6 +140,7 @@ public sealed class PayloadRow
     /// <summary>The edited payload exactly as it will be sent. Call only when IsValid.</summary>
     public TestRunPayload ToPayload() => new()
     {
+        Analyze = Analyze,
         IsLocal = Original.IsLocal,
         SourceTestCaseId = Original.SourceTestCaseId,
         GroupName = Original.GroupName,

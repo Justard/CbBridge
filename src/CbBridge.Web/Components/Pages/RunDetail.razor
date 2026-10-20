@@ -1,0 +1,116 @@
+@page "/history/{RunId}"
+@using CbBridge.Core.Application.History
+@inject CodebeamerSession Session
+@inject IResultRepository Repo
+@inject NavigationManager Nav
+@inject CbBridge.Web.Infrastructure.History.RerunInbox Inbox
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<PageTitle>@BrandingOptions.Value.ProductName · Run @RunId</PageTitle>
+
+@if (!Session.IsSignedIn)
+{
+    <SignInNotice />
+}
+else if (_run is null)
+{
+    <section class="card">
+        <h1>Run not found</h1>
+        <p class="hint">@(Repo.Available ? $"There is no run {RunId} in the history (maybe older than Database:KeepDays)." : Repo.Status)</p>
+        <a class="btn" href="/history">Back to history</a>
+    </section>
+}
+else
+{
+    <section class="card">
+        <div class="section-head">
+            <h1>Run <span class="mono">@_run.Id</span></h1>
+            <a class="btn small" href="/history">← History</a>
+        </div>
+        <dl class="facts">
+            <dt>Started</dt><dd>@_run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") @(_run.FinishedAt is { } f ? $"· took {(f - _run.StartedAt):hh\\:mm\\:ss}" : "· not finished")</dd>
+            <dt>Source</dt><dd>@_run.Source · @_run.StartedBy @(string.IsNullOrWhiteSpace(_run.Label) ? "" : $"· {_run.Label}")</dd>
+            <dt>What</dt><dd>@_run.Selection</dd>
+            <dt>Test system</dt><dd class="mono">@_run.FrameworkUrl</dd>
+            <dt>Result</dt><dd><RunBar Run="_run" /></dd>
+            @if (_run.Folder is not null) { <dt>Files</dt><dd class="mono small">@_run.Folder</dd> }
+        </dl>
+        <div class="row-wrap">
+            <button class="btn primary" @onclick="() => Rerun(true)" disabled="@(!_results.Any(r => r.IsProblem))">Rerun failed (@_results.Count(r => r.IsProblem))</button>
+            <button class="btn" @onclick="() => Rerun(false)" disabled="@(_results.Count == 0)">Rerun all (@_results.Count)</button>
+            <span class="muted">Opens them in the console for review — nothing starts by itself.</span>
+        </div>
+        @if (_note is not null) { <p class="error">@_note</p> }
+    </section>
+
+    <section class="card">
+        <h2>Tests <span class="count">@_results.Count</span></h2>
+        @if (_results.Count == 0)
+        {
+            <p class="empty">No test of this run was executed.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>#</th><th>Test</th><th>Test configuration</th><th>Verdict</th><th>Previous run</th><th>Duration</th><th>Upload</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _results)
+                        {
+                            var prev = _previous.GetValueOrDefault(r.Position);
+                            <tr>
+                                <td class="mono">@r.Position</td>
+                                <td><strong>@r.Name</strong><br /><small class="mono muted">#@r.ItemId@(r.TestCaseId is not null && r.TestCaseId != r.ItemId ? $" · TC #{r.TestCaseId}" : "")@(r.Testablauf is null ? "" : $" · {r.Testablauf}")</small></td>
+                                <td class="small">@r.TestConfiguration</td>
+                                <td><VerdictBadge Verdict="@r.Verdict" /> <TrendBadge Trend="@JsonDiff.Trend(prev?.Verdict, r.Verdict)" /></td>
+                                <td class="small">
+                                    @if (prev is null) { <span class="muted">first run</span> }
+                                    else { <a href="/history/@prev.RunId/@prev.Position"><VerdictBadge Verdict="@prev.Verdict" /></a> <span class="muted">@prev.SavedAt.ToLocalTime().ToString("dd.MM. HH:mm")</span> }
+                                </td>
+                                <td class="mono">@r.DurationSec.ToString("0.0")s</td>
+                                <td class="mono small" title="@r.UploadMessage">@r.UploadLabel</td>
+                                <td class="action"><a class="btn small" href="/history/@r.RunId/@r.Position">Details</a></td>
+                            </tr>
+                            @if (r.AnalysisComment is not null)
+                            {
+                                <tr class="ai-row">
+                                    <td colspan="8">
+                                        <span class="ai-label">✎ AI analysis</span> @r.AnalysisComment
+                                        <Feedback Result="r" OnChanged="Load" />
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string RunId { get; set; } = "";
+    private RunSummary? _run;
+    private IReadOnlyList<StoredResult> _results = Array.Empty<StoredResult>();
+    private Dictionary<int, StoredResult?> _previous = new();
+    private string? _note;
+
+    protected override void OnParametersSet() => Load();
+
+    private void Load()
+    {
+        if (!Session.IsSignedIn || !Repo.Available) return;
+        _run = Repo.GetRun(RunId);
+        _results = _run is null ? Array.Empty<StoredResult>() : Repo.ResultsOf(RunId);
+        _previous = _results.ToDictionary(r => r.Position, r => Repo.Previous(r));
+    }
+
+    private void Rerun(bool onlyFailed)
+    {
+        var chosen = _results.Where(r => !onlyFailed || r.IsProblem).ToList();
+        var payloads = chosen.Select(Core.Application.History.Rerun.PayloadOf).Where(p => p is not null).Select(p => p!).ToList();
+        if (payloads.Count == 0) { _note = "The stored requests could not be read."; return; }
+        Inbox.Put(payloads, $"{payloads.Count} test(s) from run {RunId} ({(onlyFailed ? "failed only" : "all")}) — review, then start.", _run?.FrameworkUrl);
+        Nav.NavigateTo("/console");
+    }
+}

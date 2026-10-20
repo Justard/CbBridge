@@ -1,0 +1,168 @@
+@page "/history/{RunId}/{Position:int}"
+@using CbBridge.Core.Application.History
+@inject CodebeamerSession Session
+@inject IResultRepository Repo
+@inject NavigationManager Nav
+@inject CbBridge.Web.Infrastructure.History.RerunInbox Inbox
+@inject IOptions<BrandingOptions> BrandingOptions
+
+<PageTitle>@BrandingOptions.Value.ProductName · @(_r?.Name ?? "Result")</PageTitle>
+
+@if (!Session.IsSignedIn)
+{
+    <SignInNotice />
+}
+else if (_r is null)
+{
+    <section class="card">
+        <h1>Result not found</h1>
+        <p class="hint">@(Repo.Available ? $"No test {Position} in run {RunId}." : Repo.Status)</p>
+        <a class="btn" href="/history">Back to history</a>
+    </section>
+}
+else
+{
+    <section class="card">
+        <div class="section-head">
+            <h1>@_r.Name</h1>
+            <a class="btn small" href="/history/@_r.RunId">← Run @_r.RunId</a>
+        </div>
+        <dl class="facts">
+            <dt>Verdict</dt><dd><VerdictBadge Verdict="@_r.Verdict" /> <TrendBadge Trend="@JsonDiff.Trend(_previous?.Verdict, _r.Verdict)" /> <span class="mono">@_r.DurationSec.ToString("0.0")s</span></dd>
+            <dt>Message</dt><dd>@(string.IsNullOrWhiteSpace(_r.Message) ? "—" : _r.Message)</dd>
+            <dt>Test</dt><dd class="mono">#@_r.ItemId@(_r.TestCaseId is not null && _r.TestCaseId != _r.ItemId ? $" · test case #{_r.TestCaseId}" : "")@(_r.Testablauf is null ? "" : $" · {_r.Testablauf}")@(_r.IsLocal ? " · my test" : "")</dd>
+            <dt>Test configuration</dt><dd>@(_r.TestConfiguration ?? "—")</dd>
+            <dt>Run</dt><dd>@_run?.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @_run?.Source · @_run?.StartedBy · <span class="mono">@_run?.FrameworkUrl</span></dd>
+            <dt>codebeamer</dt><dd class="mono small" title="@_r.UploadMessage">@(_r.PostedTo is null ? "not posted" : $"test run #{_r.PostedTo} · {_r.UploadLabel}")</dd>
+            <dt>Link</dt><dd class="mono small">@Nav.Uri</dd>
+        </dl>
+
+        @if (_r.AnalysisState is not null)
+        {
+            <div class="ai-box">
+                <span class="ai-label">✎ AI analysis · @_r.AnalysisState</span>
+                <p>@(_r.AnalysisComment ?? "No comment from the agent.")</p>
+                @if (_r.AnalysisComment is not null) { <Feedback Result="_r" OnChanged="Load" /> }
+                @if (_r.CommentUpload is not null && _r.CommentUpload != "NotPosted") { <small class="muted" title="@_r.CommentUploadMessage">codebeamer comment: @_r.CommentUpload.ToLowerInvariant()</small> }
+            </div>
+        }
+
+        <div class="row-wrap">
+            <button class="btn primary" @onclick="() => RerunAt(null)" disabled="@(_payload is null)">Rerun in console</button>
+            <label class="grow">Or on another test system
+                <input class="mono" @bind="_otherBench" placeholder="http://my-bench:5001" />
+            </label>
+            <button class="btn" @onclick="() => RerunAt(_otherBench)" disabled="@(_payload is null || string.IsNullOrWhiteSpace(_otherBench))">Run on this bench</button>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>History of this test <span class="count">@_history.Count</span></h2>
+        @if (_history.Count <= 1)
+        {
+            <p class="empty">This is the only recorded execution.</p>
+        }
+        else
+        {
+            <div class="timeline" aria-label="Verdicts, oldest left">
+                @foreach (var h in _history.AsEnumerable().Reverse())
+                {
+                    <a class="tl tl-@h.Verdict.ToLowerInvariant() @(h.RunId == _r.RunId && h.Position == _r.Position ? "current" : "")"
+                       href="/history/@h.RunId/@h.Position" title="@($"{h.At.ToLocalTime():yyyy-MM-dd HH:mm} · {h.Verdict} · {h.TestConfiguration}")"></a>
+                }
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>When</th><th>Verdict</th><th>Test configuration</th><th>Duration</th><th>Source</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var h in _history.Take(15))
+                        {
+                            <tr class="@(h.RunId == _r.RunId && h.Position == _r.Position ? "selected" : "")">
+                                <td class="mono small">@h.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td><VerdictBadge Verdict="@h.Verdict" /></td>
+                                <td class="small">@h.TestConfiguration</td>
+                                <td class="mono">@h.DurationSec.ToString("0.0")s</td>
+                                <td class="small">@h.Source @h.Label</td>
+                                <td class="action"><a class="btn small" href="/history/@h.RunId/@h.Position">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @if (_r.Verdict != "PASSED")
+    {
+        <section class="card">
+            <div class="section-head">
+                <h2>Compared with the last passing run</h2>
+                <div class="seg">
+                    <button class="@(_diffOf == "response" ? "on" : "")" @onclick='() => _diffOf = "response"'>Framework answer</button>
+                    <button class="@(_diffOf == "request" ? "on" : "")" @onclick='() => _diffOf = "request"'>Request sent</button>
+                </div>
+            </div>
+            @if (_lastPass is null)
+            {
+                <p class="empty">This test has never passed in the recorded history.</p>
+            }
+            else
+            {
+                <p class="hint">
+                    Passed on <a href="/history/@_lastPass.RunId/@_lastPass.Position">@_lastPass.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</a>
+                    with <strong>@(_lastPass.TestConfiguration ?? "—")</strong>; now <strong>@(_r.TestConfiguration ?? "—")</strong>.
+                    <span class="diff-key"><span class="d-del">− then</span> <span class="d-add">+ now</span></span>
+                </p>
+                <pre class="diff">@foreach (var line in Diff) {<span class="@LineCss(line.Kind)">@(line.Kind switch { DiffKind.Added => "+ ", DiffKind.Removed => "− ", _ => "  " })@line.Text
+</span>}</pre>
+            }
+        </section>
+    }
+
+    <section class="card">
+        <details class="raw"><summary>Request sent to the framework</summary><pre>@JsonDiff.PrettyOf(_r.RequestJson)</pre></details>
+        <details class="raw"><summary>Framework answer</summary><pre>@(string.IsNullOrWhiteSpace(_r.ResponseJson) ? "(no answer)" : JsonDiff.PrettyOf(_r.ResponseJson))</pre></details>
+        @if (_r.AnalysisJson is not null)
+        {
+            <details class="raw"><summary>AI agent's full answer</summary><pre>@JsonDiff.PrettyOf(_r.AnalysisJson)</pre></details>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string RunId { get; set; } = "";
+    [Parameter] public int Position { get; set; }
+    private StoredResult? _r, _previous, _lastPass;
+    private RunSummary? _run;
+    private IReadOnlyList<HistoryPoint> _history = Array.Empty<HistoryPoint>();
+    private Core.Domain.TestRunPayload? _payload;
+    private string _diffOf = "response";
+    private string _otherBench = "";
+
+    private List<DiffLine> Diff => _lastPass is null || _r is null ? new()
+        : _diffOf == "request" ? JsonDiff.Lines(_lastPass.RequestJson, _r.RequestJson) : JsonDiff.Lines(_lastPass.ResponseJson, _r.ResponseJson);
+
+    private static string LineCss(DiffKind k) => k switch { DiffKind.Added => "d-add", DiffKind.Removed => "d-del", _ => "d-same" };
+
+    protected override void OnParametersSet() => Load();
+
+    private void Load()
+    {
+        if (!Session.IsSignedIn || !Repo.Available) return;
+        _r = Repo.GetResult(RunId, Position);
+        if (_r is null) return;
+        _run = Repo.GetRun(RunId);
+        _previous = Repo.Previous(_r);
+        _lastPass = _r.Verdict == "PASSED" ? null : Repo.LastPassingBefore(_r);
+        _history = Repo.History(_r.TestKey, 100);
+        _payload = Rerun.PayloadOf(_r);
+    }
+
+    private void RerunAt(string? bench)
+    {
+        if (_payload is null || _r is null) return;
+        Inbox.Put(new[] { _payload }, $"“{_r.Name}” from run {_r.RunId}" + (bench is null ? "" : $" on {bench}") + " — review, then start.",
+            bench ?? _run?.FrameworkUrl);
+        Nav.NavigateTo("/console");
+    }
+}

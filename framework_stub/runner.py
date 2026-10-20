@@ -14,6 +14,7 @@ from executor import execute
 
 _lock = threading.Lock()
 _active = {}        # itemId -> Process   (tests currently running)
+_progress = {}      # itemId -> {"steps": [...finished steps], "total": n, "startedAt": t}  (GET /progress)
 _cancelled = set()  # itemIds stopped via /cancel
 
 
@@ -24,6 +25,16 @@ def _child(testrun, out_q):
         out_q.put(("done", result))
     except Exception as ex:  # report, never crash silently
         out_q.put(("error", f"{type(ex).__name__}: {ex}"))
+
+
+def progress(item_id):
+    """Live state of a running test for GET /progress/<itemId>, or None."""
+    with _lock:
+        p = _progress.get(str(item_id))
+        return None if p is None else {
+            "itemId": str(item_id), "running": True, "stepsDone": len(p["steps"]), "stepsTotal": p["total"],
+            "lastStep": p["steps"][-1] if p["steps"] else None,
+            "elapsedSec": round(time.monotonic() - p["startedAt"], 1)}
 
 
 def is_running(item_id):
@@ -62,9 +73,11 @@ def run_with_limit(testrun):
     started = time.monotonic()
     deadline = started + limit
     proc.start()
+    total = len(testrun.get("testRunSteps") or []) if isinstance(testrun.get("testRunSteps"), list) else None
     with _lock:
         _active[item_id] = proc
         _cancelled.discard(item_id)
+        _progress[item_id] = {"steps": [], "total": total, "startedAt": started}
 
     steps, final, error = [], None, None
     try:
@@ -77,6 +90,9 @@ def run_with_limit(testrun):
                 continue
             if kind == "step":
                 steps.append(data)
+                with _lock:
+                    if item_id in _progress:
+                        _progress[item_id]["steps"].append(data)
             elif kind == "done":
                 final = data
                 break
@@ -86,6 +102,7 @@ def run_with_limit(testrun):
     finally:
         with _lock:
             _active.pop(item_id, None)
+            _progress.pop(item_id, None)
             was_cancelled = item_id in _cancelled
             _cancelled.discard(item_id)
 

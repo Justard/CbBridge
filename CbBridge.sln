@@ -9,6 +9,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CbBridge.Web", "src\CbBridg
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CbBridge.Core", "src\CbBridge.Core\CbBridge.Core.csproj", "{961E7ED0-1078-401E-B2DE-0975044BBE3D}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{28A20B0A-B28B-4093-AEB4-215620BD5990}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CbBridge.Tests", "tests\CbBridge.Tests\CbBridge.Tests.csproj", "{F49B094D-4A3A-4EF8-BF76-227E0F99A2A9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +30,14 @@ Global
 		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{961E7ED0-1078-401E-B2DE-0975044BBE3D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F49B094D-4A3A-4EF8-BF76-227E0F99A2A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F49B094D-4A3A-4EF8-BF76-227E0F99A2A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F49B094D-4A3A-4EF8-BF76-227E0F99A2A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F49B094D-4A3A-4EF8-BF76-227E0F99A2A9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{FB3DA69E-74AE-47C9-AA45-3293FC7F228D} = {C3DDAB3D-BFA3-4A6D-B7EB-2ABC0B406C24}
 		{961E7ED0-1078-401E-B2DE-0975044BBE3D} = {C3DDAB3D-BFA3-4A6D-B7EB-2ABC0B406C24}
+		{F49B094D-4A3A-4EF8-BF76-227E0F99A2A9} = {28A20B0A-B28B-4093-AEB4-215620BD5990}
 	EndGlobalSection
 EndGlobal

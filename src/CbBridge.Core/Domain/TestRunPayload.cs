@@ -52,6 +52,10 @@ public sealed class TestRunPayload
     /// <summary>Run multiple: name of the Testablauf (test run / test set) this test case was picked from.</summary>
     [JsonIgnore] public string? GroupName { get; set; }
 
+    /// <summary>AI analysis: send this test to the analysis agent if it fails (per-test checkbox; the run-level
+    /// switch must be on as well).</summary>
+    [JsonIgnore] public bool Analyze { get; set; } = true;
+
     public static string NewLocalId() => "local-" + Guid.NewGuid().ToString("N")[..6];
 
     /// <summary>The framework request body: fixed fields, then each extra field as its own top-level key.</summary>
@@ -87,6 +91,7 @@ public sealed class TestRunPayload
         IsLocal = IsLocal,
         SourceTestCaseId = SourceTestCaseId,
         GroupName = GroupName,
+        Analyze = Analyze,
         ItemId = ItemId,
         Name = Name,
         Parent = Parent,
