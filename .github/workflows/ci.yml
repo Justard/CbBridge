@@ -43,7 +43,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Python tools
-        run: pip install flask mcp openapi-spec-validator
+        run: pip install flask pyyaml mcp openapi-spec-validator
+
+      - name: Bench side tests (framework stand-in)
+        working-directory: framework_stub
+        run: python -m unittest discover -s tests -v
 
       - name: OpenAPI file is up to date and valid
         run: |

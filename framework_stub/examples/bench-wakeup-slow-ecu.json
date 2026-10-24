@@ -1,0 +1,22 @@
+{
+  "itemId": "90002",
+  "name": "ECU wake-up, slow ECU (example, fails)",
+  "description": "",
+  "testConfiguration": "R1.0 / FW 1.2.0 (example)",
+  "timeLimitSec": 30,
+  "parameters": {
+    "fake.wakeMs": 650
+  },
+  "testRunSteps": [
+    [
+      "Given the bench is ready\nAnd the supply is set to 13.5 V\nAnd the supply output is switched on",
+      "",
+      true
+    ],
+    [
+      "When the ignition is switched on",
+      "Then CAN frame 0x1A0 is received within 1 s\nAnd the wake-up time is below 300 ms",
+      true
+    ]
+  ]
+}

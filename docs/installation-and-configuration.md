@@ -41,7 +41,7 @@ flowchart LR
 ## Run locally for evaluation
 
 ```powershell
-pip install flask
+pip install flask pyyaml
 python mock_codebeamer/app.py                 # fake codebeamer   → http://localhost:5002/cb
 python framework_stub/app.py --port 5001      # framework stand-in → http://localhost:5001
 dotnet run --project src/CbBridge.Web         # the bridge (builds Core too)

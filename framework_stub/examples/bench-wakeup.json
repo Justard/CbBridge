@@ -1,0 +1,28 @@
+{
+  "itemId": "90001",
+  "name": "ECU wake-up on ignition (example)",
+  "description": "Neutral example: the ECU must send its heartbeat within 300 ms after ignition ON.",
+  "testConfiguration": "R1.0 / FW 1.2.0 (example)",
+  "timeLimitSec": 30,
+  "parameters": {
+    "supply": "13.5 V",
+    "temperature": "25C"
+  },
+  "testRunSteps": [
+    [
+      "Given the bench is ready\nAnd the supply is set to <supply>\nAnd the supply output is switched on",
+      "Then the supply current is below 1 mA",
+      true
+    ],
+    [
+      "When the ignition is switched on",
+      "Then CAN frame 0x1A0 is received within 500 ms\nAnd the wake-up time is below 300 ms",
+      true
+    ],
+    [
+      "When the ignition is switched off\nAnd the bench waits 200 ms",
+      "Back to sleep (shown only, not executed)",
+      false
+    ]
+  ]
+}

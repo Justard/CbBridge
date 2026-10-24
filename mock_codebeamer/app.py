@@ -74,7 +74,26 @@ ITEMS = {
                   "Step 1 hangs for 120 s so the time limit has to stop it.",
                   [["Block current route", "Reroute in < 3 s", True]],
                   {"simulateHangSec": 120}),
+    # Steps written as sentences: the framework stand-in runs them on its FAKE bench (framework_stub/bench/).
+    "88134": make_item("88134", "ECU wake-up on ignition (bench sentences)",
+                  "Neutral example: heartbeat 0x1A0 within 300 ms after ignition ON, supply from the parameter set.",
+                  [["Given the bench is ready\nAnd the supply is set to <supply>\nAnd the supply output is switched on",
+                    "Then the supply current is below 1 mA", True],
+                   ["When the ignition is switched on",
+                    "Then CAN frame 0x1A0 is received within 500 ms\nAnd the wake-up time is below 300 ms", True],
+                   ["When the ignition is switched off", "ECU goes back to sleep", False]],
+                  {"supply": "13.5 V"}),
+    "88135": make_item("88135", "Motor ramp (bench keywords, step 3 fails)",
+                  "Neutral example: the fake motor saturates at 2500 rpm, so the 3000 rpm step fails.",
+                  [["_BENCH_READY\n_PSU_SET(13.5 V)\n_PSU_OUTPUT(on)\n_IGNITION(on)", "_CAN_EXPECT(0x1A0, 500 ms)", True],
+                   ["When the motor is commanded to 1500 rpm forward",
+                    "Then the motor speed is 1500 rpm ± 50 rpm within 2 s", True],
+                   ["When the motor is commanded to 3000 rpm reverse",
+                    "Then the motor speed is 3000 rpm ± 50 rpm within 2 s", False],
+                   ["When the motor is stopped", "Then the motor speed is 0 rpm ± 20 rpm within 2 s", True]],
+                  {"fake.motorMaxRpm": 2500}),
 }
+BENCH_FOLDER = ("88131", "88132", "88133", "88134", "88135")
 
 
 # A test case whose parameter set generated 14 test runs (references of /item/10231)
@@ -156,7 +175,7 @@ def outline(cid):
     if cid == "4480":   # a folder with the Testabläufe inside (the folder itself is not a Testablauf)
         groups = [{"uri": f"/item/{i}", "name": n, "type": t} for i, (n, t, _) in TESTABLAEUFE.items()]
         return jsonify([{"uri": "/item/88199", "name": "Release 4.3", "type": "Folder", "children": groups}])
-    children = [{"uri": f"/item/{i}", "name": ITEMS[i]["name"], "status": "Ready"} for i in ("88131", "88132", "88133")]
+    children = [{"uri": f"/item/{i}", "name": ITEMS[i]["name"], "status": "Ready"} for i in BENCH_FOLDER]
     return jsonify([{"uri": "/item/88130", "name": ITEMS["88130"]["name"], "status": "Ready", "children": children}])
 
 
@@ -173,7 +192,7 @@ def references(iid):
         cases = [{"uri": f"/item/{c}", "name": TEST_CASES[c][0], "type": "Test Case"} for c in TESTABLAEUFE[iid][2]]
         return jsonify(cases + [{"uri": "/item/2210", "name": "REQ wake-up timing", "type": "Requirement"}])
     if iid == "88130":
-        return jsonify([{"uri": f"/item/{i}", "name": ITEMS[i]["name"], "type": "Test Run"} for i in ("88131", "88132", "88133")])
+        return jsonify([{"uri": f"/item/{i}", "name": ITEMS[i]["name"], "type": "Test Run"} for i in BENCH_FOLDER])
     if iid == "10231":
         # like codebeamer usually does: newest first
         return jsonify(list(reversed(GENERATED_RUNS)) + [{"uri": "/item/2210", "name": "REQ wake-up timing", "type": "Requirement"}])

@@ -30,6 +30,7 @@ The product name, logo and colours are configurable, so any company can run it u
 | [Installation & configuration](docs/installation-and-configuration.md) | Admins | Requirements, install, every setting, connecting real systems, troubleshooting |
 | [Branding](docs/branding.md) | Admins | Company logo, name, colours, favicon |
 | [Framework contract](docs/framework-contract.md) | Framework developers | The HTTP API your test framework must offer, time limits, verdicts |
+| [Bench side](docs/bench-steps.md) | Framework developers, test authors | Sentences (Given/When/Then) → functions, context per test, safe stop — neutral example on a fake bench |
 | [AI analysis](docs/ai-analysis.md) | Agent developers, admins | Contract for the failure-analysis agent (n8n, Zapier, own service) |
 | [CI / Jenkins](docs/ci-jenkins.md) | Admins, CI engineers | Trigger a category, a Testablauf or a single test from Jenkins; JUnit results |
 | [API, events and metrics](docs/api.md) | Integrators | Keys and scopes, /api/v1, webhooks, /metrics, OpenAPI |
@@ -39,7 +40,7 @@ The product name, logo and colours are configurable, so any company can run it u
 
 ## Quick start (local, with the built-in stand-ins)
 
-Needs the **.NET 8 SDK** and **Python 3.10+** with `pip install flask`.
+Needs the **.NET 8 SDK** and **Python 3.10+** with `pip install flask pyyaml`.
 
 ```powershell
 python mock_codebeamer/app.py                 # fake codebeamer   → http://localhost:5002/cb
@@ -74,7 +75,8 @@ CbBridge/
 ├─ tools/agent_stub/, event_sink/, mcp/, openapi/   stand-ins and helpers for local testing
 ├─ Dockerfile                   container image
 ├─ .github/workflows/ci.yml     build, tests (Linux + Windows), end-to-end, container
-├─ framework_stub/              reference implementation of the framework contract (Flask + CLI)
+├─ framework_stub/              reference implementation of the framework contract (Flask + CLI),
+│                               with bench/: sentences → functions, context per test, safe stop
 ├─ mock_codebeamer/             fake codebeamer for local development (invented data)
 ├─ docs/                        documentation
 └─ .vscode/                     run/debug setup for VS Code

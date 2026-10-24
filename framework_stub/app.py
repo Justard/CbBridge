@@ -4,10 +4,21 @@ Flask entry point — mirrors your framework's REST API.
     POST /cancel/<itemId>    stop a running test run
     GET  /progress/<itemId>  live step progress of a running test run (contract 1.1, optional)
     GET  /health             status + contract version + capabilities
+    GET  /steps              the sentence catalogue (what test authors may write), from bench/steps.yaml
+    POST /check              plan a test run without touching the bench: are all sentences known?
 """
+import sys
+
 from flask import Flask, jsonify, request
 
+import bench
 import runner
+
+# Check steps.yaml and bench.yaml at START-UP: a broken catalogue stops here, with every problem listed.
+try:
+    CATALOGUE, BENCH = bench.load()
+except (bench.CatalogueError, bench.BenchConfigError, OSError) as _ex:
+    sys.exit(f"bench configuration is broken, not starting:\n{_ex}")
 
 app = Flask(__name__)
 REQUIRED = ("itemId", "name")
@@ -21,7 +32,26 @@ def health():
     # contract: which version of docs/framework-contract.md this framework implements;
     # capabilities: optional parts it supports, so the bridge only uses what is there.
     return jsonify(status="ok", contract=CONTRACT, framework="framework_stub 1.1",
-                   capabilities=["cancel", "progress", "attachments"])
+                   capabilities=["cancel", "progress", "attachments", "steps"],
+                   bench=BENCH.name, steps=len(CATALOGUE.steps))
+
+
+@app.get("/steps")
+def steps():
+    return jsonify(bench=BENCH.name, types=CATALOGUE.types.names(), steps=CATALOGUE.describe())
+
+
+@app.post("/check")
+def check():
+    testrun = request.get_json(force=True, silent=True)
+    if not isinstance(testrun, dict):
+        return jsonify(ok=False, problems=["body must be a JSON object"]), 400
+    from bench.context import _params_as_dict
+    from bench.engine import plan
+    planned, problems = plan(testrun, CATALOGUE, _params_as_dict(testrun.get("parameters")))
+    return jsonify(ok=not problems, benchTest=bench.is_bench_test(testrun), problems=problems,
+                   steps=[{"index": p["index"], "calls": [c.step_def.function_name for c in p["calls"]],
+                           "checks": [c.step_def.function_name for c in p["checks"]]} for p in planned])
 
 
 @app.get("/progress/<item_id>")
