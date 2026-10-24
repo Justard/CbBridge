@@ -1,0 +1,32 @@
+{
+  "itemId": "90003",
+  "name": "Motor ramp, keyword style (example)",
+  "description": "",
+  "testConfiguration": "R1.0 / FW 1.2.0 (example)",
+  "timeLimitSec": 30,
+  "parameters": {
+    "fake.motorMaxRpm": 2500
+  },
+  "testRunSteps": [
+    [
+      "_BENCH_READY\n_PSU_SET(13.5 V)\n_PSU_OUTPUT(on)\n_IGNITION(on)",
+      "_CAN_EXPECT(0x1A0, 500 ms)",
+      true
+    ],
+    [
+      "When the motor is commanded to 1500 rpm forward",
+      "Then the motor speed is 1500 rpm ± 50 rpm within 2 s\nAnd the supply current is between 1 A and 2.5 A",
+      true
+    ],
+    [
+      "When the motor is commanded to 3000 rpm reverse",
+      "Then the motor speed is 3000 rpm ± 50 rpm within 2 s",
+      false
+    ],
+    [
+      "When the motor is stopped",
+      "Then the motor speed is 0 rpm ± 20 rpm within 2 s",
+      true
+    ]
+  ]
+}

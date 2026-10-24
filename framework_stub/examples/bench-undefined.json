@@ -1,0 +1,25 @@
+{
+  "itemId": "90004",
+  "name": "Typo in a sentence (example, BLOCKED)",
+  "description": "",
+  "testConfiguration": "R1.0 / FW 1.2.0 (example)",
+  "timeLimitSec": 30,
+  "parameters": {},
+  "testRunSteps": [
+    [
+      "Given the bench is ready",
+      "",
+      true
+    ],
+    [
+      "When the ignition is turned on",
+      "Then CAN frame 0x1A0 is received within 500 ms",
+      true
+    ],
+    [
+      "When the supply is set to 13.5 A",
+      "",
+      false
+    ]
+  ]
+}

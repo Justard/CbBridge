@@ -1,0 +1,20 @@
+{
+  "itemId": "90006",
+  "name": "Blocked driver (example, TIMEOUT + kill + emergency safe state)",
+  "description": "",
+  "testConfiguration": "R1.0 / FW 1.2.0 (example)",
+  "timeLimitSec": 3,
+  "parameters": {},
+  "testRunSteps": [
+    [
+      "Given the bench is ready\nAnd the supply is set to 13.5 V\nAnd the supply output is switched on\nAnd the ignition is switched on",
+      "",
+      true
+    ],
+    [
+      "When the bench blocks for 60 s",
+      "",
+      true
+    ]
+  ]
+}

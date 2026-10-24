@@ -217,10 +217,13 @@ Exit code 0 = PASSED, 1 = anything else — usable in scripts and CI.
 | `app.py` | Flask endpoints, request checks | keep (adapt port/host) |
 | `runner.py` | child process, `timeLimitSec`, cancel, partial results | keep |
 | `executor.py` | runs the steps | **replace `execute()` with a call into your framework** |
+| `bench/` | sentences (Given/When/Then, `_KEYWORD()`) → functions, context per test, safe state | take over file by file — see [Bench side](bench-steps.md) |
 | `cli.py` | developer command line | keep |
 
-`execute(testrun, report_step)` receives the request JSON and must return the response JSON. Call
-`report_step(step_result)` after each step so finished steps survive a timeout or cancel.
+`execute(testrun, report_step, stop_event)` receives the request JSON and must return the response JSON. Call
+`report_step(step_result)` after each step so finished steps survive a timeout or cancel. `stop_event` is set on a
+time limit or cancel: stop, bring the bench into its safe state and return what you have — the runner kills the
+process only if that doesn't happen within `BENCH_SOFT_STOP_SEC`.
 
 Start it with `python app.py --port 5001` (add `--host 0.0.0.0` to accept calls from other machines).
 On Windows, keep the `if __name__ == "__main__":` guard in `app.py` — child processes re-import the module.

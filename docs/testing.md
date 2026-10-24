@@ -1,12 +1,13 @@
 # Testing the bridge
 
-Four layers, none needs a NuGet package or a real codebeamer.
+Five layers, none needs a NuGet package or a real codebeamer.
 
 | What | Command | Checks |
 |---|---|---|
 | Unit tests | `dotnet run --project tests/CbBridge.Tests` | Link parsing, payload mapping, Test Configuration, JSON round trips, AI comment parsing and callbacks, diff and trend, API keys and scopes, event signatures, JUnit, metrics, bench registry, and the **run history against the real system SQLite** (migrations, search, previous/last pass, unicode, parallel writes, clean-up) |
 | End-to-end | `python tools/ci/smoke_test.py` | A running bridge against the stand-ins: CI runs, AI comment, JUnit, history API, audit, what reached codebeamer, events and their signatures, MCP |
 | MCP | `python tools/mcp/mcp_smoke.py --key dev-agent-key` | The MCP server with the official MCP client library |
+| Bench side | `cd framework_stub && python -m unittest discover -s tests` | Sentence catalogue checks, units, matching, context, clean-up order, soft stop and kill with emergency safe state — on the fake bench ([details](bench-steps.md)) |
 | Your framework | `python tools/framework_check/check_framework.py --url http://bench:5001 --slow slow.json` | Your framework against the [framework contract](framework-contract.md) |
 
 ## Unit tests

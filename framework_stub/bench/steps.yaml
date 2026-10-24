@@ -1,0 +1,96 @@
+# Step catalogue — the sentences test authors may write in codebeamer, and the function behind each.
+# Checked when the framework starts: a wrong function name, placeholder or a duplicate sentence stops the start.
+#
+#   sentence   the words, with {name:type} placeholders. Keywords (Given/When/Then/And/But) are NOT part of it.
+#   function   module.function in bench/keywords/ — called as function(ctx, name=value, ...)
+#   keyword    optional: the same step as _KEYWORD(arg, ...) for people who prefer that style
+#   also       optional: more wordings for the same step (another language, a synonym)
+#   note       optional: shown in the catalogue (GET /steps)
+#
+# Types: ms s V A rpm degC pct int float hex word text onoff — and the enums below.
+# In a sentence, <name> is replaced by the test run's parameter `name` before matching:
+#   "Given the supply is set to <supply>"  with parameters {"supply": "9 V"}
+# ALL CONTENT HERE IS A NEUTRAL EXAMPLE.
+
+version: 1
+
+enums:
+  direction: [forward, reverse]
+
+steps:
+  # ---- bench -----------------------------------------------------------------------------------------------
+  - sentence: "the bench is ready"
+    function: common.bench_ready
+    keyword: BENCH_READY
+    also: ["der Prüfstand ist bereit"]
+    note: Opens all devices and checks nothing is left switched on.
+
+  - sentence: "the bench waits {duration:ms}"
+    function: common.wait
+    keyword: WAIT
+
+  - sentence: "nothing is done"
+    function: common.nop
+    keyword: NOP
+    note: Does nothing — used by tools/framework_check for its quick test.
+
+  - sentence: "note {text:text}"
+    function: common.note
+
+  # ---- power supply ----------------------------------------------------------------------------------------
+  - sentence: "the supply is set to {voltage:V}"
+    function: power.set_voltage
+    keyword: PSU_SET
+    also: ["die Versorgung ist auf {voltage:V} gestellt"]
+
+  - sentence: "the supply output is switched {state:onoff}"
+    function: power.output
+    keyword: PSU_OUTPUT
+
+  - sentence: "the supply current is below {limit:A}"
+    function: power.expect_current_below
+    keyword: PSU_CURRENT_BELOW
+
+  - sentence: "the supply current is between {low:A} and {high:A}"
+    function: power.expect_current_between
+
+  # ---- ignition --------------------------------------------------------------------------------------------
+  - sentence: "the ignition is switched {state:onoff}"
+    function: ignition.switch
+    keyword: IGNITION
+    also: ["die Zündung wird {state:onoff}geschaltet"]
+
+  # ---- CAN -------------------------------------------------------------------------------------------------
+  - sentence: "CAN frame {frame:hex} is received within {timeout:ms}"
+    function: can.expect_frame
+    keyword: CAN_EXPECT
+    note: Measures the wake-up time when the ignition was switched on in this test.
+
+  - sentence: "the wake-up time is below {limit:ms}"
+    function: can.expect_wakeup_below
+
+  - sentence: "no CAN frame {frame:hex} is received for {duration:ms}"
+    function: can.expect_silence
+
+  # ---- motor -----------------------------------------------------------------------------------------------
+  - sentence: "the motor is commanded to {speed:rpm} {direction:direction}"
+    function: motor.command
+    keyword: MOTOR_SET
+
+  - sentence: "the motor speed is {speed:rpm} ± {tolerance:rpm} within {timeout:ms}"
+    function: motor.expect_speed
+    keyword: MOTOR_EXPECT
+    also: ["the motor speed is {speed:rpm} +/- {tolerance:rpm} within {timeout:ms}"]
+
+  - sentence: "the motor is stopped"
+    function: motor.stop
+    keyword: MOTOR_STOP
+
+  # ---- demo only: show what happens on a time limit --------------------------------------------------------
+  - sentence: "the bench hangs for {duration:s}"
+    function: common.hang
+    note: Demo. Reacts to stop -> soft stop, safe state inside the test.
+
+  - sentence: "the bench blocks for {duration:s}"
+    function: common.block
+    note: Demo. Ignores stop (like a hung driver) -> process killed, safe state from outside.

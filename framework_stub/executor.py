@@ -7,13 +7,31 @@ Replace the body of execute() with a call into your framework. Keep the signatur
 `testrun` is exactly what the bridge sends: itemId, name, parent, description,
 testRunSteps, parameters, modifier, testConfiguration, timeLimitSec.
 
-Demo switches (put them in "parameters"):
+Two kinds of test runs:
+  - steps written as sentences (Given/When/Then...) or _KEYWORD(...)  -> run on the bench, see bench/
+  - plain steps ("Switch ignition ON")                                 -> the old simulation below
+
+Demo switches for the simulation (put them in "parameters"):
     stepDelaySec        seconds per step (default 1)
     simulateFailAtStep  step number that fails
     simulateHangSec     hang this long in step 1 (to see the time limit work)
 """
 import base64
 import time
+
+import bench
+
+
+class _Stopped(Exception):
+    pass
+
+
+def _sleep(seconds, stop_event):
+    """Sleep that ends early when the bridge asks to stop."""
+    if stop_event is None:
+        time.sleep(seconds)
+    elif stop_event.wait(seconds):
+        raise _Stopped()
 
 
 def _params_as_dict(params):
@@ -36,7 +54,14 @@ def _read_step(step):
     return str(step), None, False
 
 
-def execute(testrun, report_step=lambda step: None):
+def execute(testrun, report_step=lambda step: None, stop_event=None):
+    if bench.is_bench_test(testrun):
+        catalogue, bench_config = bench.load()
+        return bench.run_test(testrun, catalogue, bench_config, report_step, stop_event)
+    return _simulate(testrun, report_step, stop_event)
+
+
+def _simulate(testrun, report_step, stop_event):
     params = _params_as_dict(testrun.get("parameters"))
     steps = testrun.get("testRunSteps") or [["(no steps given)", "", False]]
     if not isinstance(steps, list):
@@ -49,9 +74,13 @@ def execute(testrun, report_step=lambda step: None):
     results, verdict = [], "PASSED"
     for i, step in enumerate(steps, start=1):
         action, expected, critical = _read_step(step)
-        time.sleep(delay)
-        if hang and i == 1:
-            time.sleep(hang)
+        try:
+            _sleep(delay, stop_event)
+            if hang and i == 1:
+                _sleep(hang, stop_event)
+        except _Stopped:
+            return {"itemId": testrun.get("itemId"), "name": testrun.get("name"), "verdict": "ABORTED",
+                    "message": "stopped by the bridge", "steps": results}
         ok = i != fail_at
         result = {
             "index": i,

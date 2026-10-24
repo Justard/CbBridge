@@ -1,0 +1,18 @@
+# The devices of THIS bench and its safe state. One file per bench; select it with BENCH_CONFIG=path.
+# Swap the fake.* drivers for your real ones — the step functions don't change.
+# ALL CONTENT HERE IS A NEUTRAL EXAMPLE.
+
+name: fake-bench-1
+
+devices:
+  psu:      { driver: fake.PowerSupply, settings: { max_voltage: 30 } }
+  ignition: { driver: fake.Ignition }
+  can:      { driver: fake.CanBus, settings: { channel: can0, bitrate: 500000 } }
+  motor:    { driver: fake.Motor }
+
+# After EVERY test (passed, failed, stopped) — and after a killed test from the framework process.
+# Order matters: stop moving parts first, cut power last.
+safe_state:
+  - motor.stop
+  - ignition.off
+  - psu.output_off

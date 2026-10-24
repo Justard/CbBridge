@@ -130,6 +130,23 @@ def main():
     except ImportError:
         print("  skip  MCP (pip install mcp)")
 
+    # bench side: sentences in codebeamer steps -> functions on the (fake) bench
+    status, steps = call("GET", "http://localhost:5001/steps")
+    check("framework serves its step catalogue", status == 200 and len(steps["steps"]) >= 10, str(steps)[:200])
+    for item, expected in (("88134", "PASSED"), ("88135", "FAILED")):
+        status, started = call("POST", f"{BRIDGE}/api/ci/runs", {**JENKINS, **BASIC}, {"testRun": item, "timeLimitSec": 30})
+        job = wait_job(started["id"]) if status == 202 else None
+        verdict = job and job["results"][0]["verdict"]
+        check(f"bench sentences #{item} → {expected}", verdict == expected, str(job)[:300])
+        if job:
+            _, detail = call("GET", f"{BRIDGE}/api/v1/runs/{job['runId']}/results/1", AGENT)
+            response = detail.get("response") if isinstance(detail, dict) else None
+            if isinstance(response, str):
+                response = json.loads(response)
+            check(f"bench #{item}: measurements and safe state in the answer",
+                  bool(response and response.get("measurements")) and response["bench"]["safeState"] == "reached",
+                  str(response)[:300])
+
     print(f"\n{'all passed' if not failures else f'{len(failures)} failed: ' + ', '.join(failures)}")
 
 
